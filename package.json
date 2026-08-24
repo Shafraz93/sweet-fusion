@@ -1,0 +1,55 @@
+{
+  "name": "sweet-fusion-app",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "eslint",
+    "db:generate": "prisma generate",
+    "db:migrate": "prisma migrate dev",
+    "db:push": "prisma db push",
+    "db:seed": "tsx prisma/seed.ts",
+    "db:studio": "prisma studio",
+    "db:setup": "prisma generate && prisma db push && tsx prisma/seed.ts",
+    "db:dev": "prisma dev -d",
+    "db:dev:stop": "prisma dev stop default",
+    "db:dev:start": "prisma dev start default",
+    "db:dev:restart": "prisma dev stop default && prisma dev -d"
+  },
+  "prisma": {
+    "seed": "tsx prisma/seed.ts"
+  },
+  "dependencies": {
+    "@hookform/resolvers": "^5.9.1",
+    "@prisma/adapter-pg": "^7.9.1",
+    "@prisma/client": "^7.9.1",
+    "class-variance-authority": "^0.7.1",
+    "clsx": "^2.1.1",
+    "date-fns": "^4.4.0",
+    "dotenv": "^17.4.2",
+    "lucide-react": "^1.33.0",
+    "next": "16.3.2",
+    "pg": "^8.23.0",
+    "prisma": "^7.9.1",
+    "react": "19.2.8",
+    "react-dom": "19.2.8",
+    "react-hook-form": "^7.86.0",
+    "recharts": "^3.10.1",
+    "tailwind-merge": "^3.6.0",
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "@tailwindcss/postcss": "^4",
+    "@types/node": "^20",
+    "@types/pg": "^8.23.1",
+    "@types/react": "^19",
+    "@types/react-dom": "^19",
+    "eslint": "^9",
+    "eslint-config-next": "16.3.2",
+    "tailwindcss": "^4",
+    "tsx": "^4.23.12",
+    "typescript": "^5"
+  }
+}
