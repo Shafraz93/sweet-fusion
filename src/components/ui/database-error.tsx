@@ -14,11 +14,11 @@ export function DatabaseError({
       </CardHeader>
       <CardContent className="space-y-4 text-sm text-amber-900">
         <p>{message}</p>
-        <p>The local PostgreSQL server may have stopped. Start it in a separate terminal:</p>
-        <pre className="rounded-lg bg-white px-4 py-3 text-xs text-slate-800 border border-amber-200">
-          npx prisma dev
-        </pre>
-        <p>Then restart the Next.js dev server and refresh this page.</p>
+        <p className="text-xs text-amber-800">
+          For Vercel: set <code className="rounded bg-white px-1">DATABASE_URL</code> to your
+          Supabase Transaction pooler URL (port 6543, with{" "}
+          <code className="rounded bg-white px-1">?pgbouncer=true</code>).
+        </p>
         <Link href="/">
           <Button variant="outline">Retry</Button>
         </Link>

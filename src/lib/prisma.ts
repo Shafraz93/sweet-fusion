@@ -36,12 +36,17 @@ function createPool(): Pool {
     throw new Error("DATABASE_URL environment variable is not set");
   }
 
+  const needsSsl =
+    process.env.NODE_ENV === "production" ||
+    connectionString.includes("supabase.com");
+
   const pool = new Pool({
     connectionString,
-    max: 10,
+    max: process.env.NODE_ENV === "production" ? 1 : 10,
     idleTimeoutMillis: 30_000,
     connectionTimeoutMillis: 10_000,
     allowExitOnIdle: false,
+    ssl: needsSsl ? { rejectUnauthorized: false } : undefined,
   });
 
   pool.on("error", (err) => {
@@ -62,7 +67,7 @@ function createPrismaClient() {
   });
 }
 
-export const prisma = (() => {
+function getPrismaClient(): PrismaClient {
   if (
     process.env.NODE_ENV !== "production" &&
     globalForPrisma.prismaClientVersion !== PRISMA_CLIENT_VERSION
@@ -70,10 +75,24 @@ export const prisma = (() => {
     globalForPrisma.prisma = undefined;
     globalForPrisma.prismaClientVersion = PRISMA_CLIENT_VERSION;
   }
-  const client = globalForPrisma.prisma ?? createPrismaClient();
+
+  if (globalForPrisma.prisma) return globalForPrisma.prisma;
+
+  const client = createPrismaClient();
   if (process.env.NODE_ENV !== "production") globalForPrisma.prisma = client;
   return client;
-})();
+}
+
+/** Lazy client — avoids crashing at import when DATABASE_URL is missing. */
+export const prisma = new Proxy({} as PrismaClient, {
+  get(_target, prop) {
+    const client = getPrismaClient();
+    const value = Reflect.get(client, prop, client);
+    return typeof value === "function"
+      ? (value as (...args: unknown[]) => unknown).bind(client)
+      : value;
+  },
+});
 
 /** Reset pool/client after connection failures (dev hot-reload recovery). */
 export async function resetDatabaseConnection() {
@@ -88,11 +107,15 @@ export function isDatabaseConnectionError(error: unknown): boolean {
   if (!(error instanceof Error)) return false;
   const msg = error.message.toLowerCase();
   return (
+    msg.includes("database_url environment variable is not set") ||
     msg.includes("connection terminated") ||
     msg.includes("connection refused") ||
     msg.includes("econnreset") ||
     msg.includes("econnrefused") ||
     msg.includes("can't reach database") ||
-    msg.includes("server has closed the connection")
+    msg.includes("server has closed the connection") ||
+    msg.includes("password authentication failed") ||
+    msg.includes("self-signed certificate") ||
+    msg.includes("does not exist")
   );
 }

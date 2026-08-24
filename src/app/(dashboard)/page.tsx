@@ -37,9 +37,15 @@ async function DashboardContent({
     data = await getDashboardData(period);
   } catch (error) {
     if (isDatabaseConnectionError(error)) {
-      return (
-        <DatabaseError message="Connection terminated unexpectedly. The database server is not reachable." />
-      );
+      const message =
+        error instanceof Error &&
+        error.message.includes("DATABASE_URL environment variable is not set")
+          ? "DATABASE_URL is not set on the server. Add it in Vercel → Settings → Environment Variables, then redeploy."
+          : error instanceof Error &&
+              error.message.toLowerCase().includes("does not exist")
+            ? "Database tables are missing. Run npx prisma db push against your Supabase database, then redeploy."
+            : "Connection terminated unexpectedly. The database server is not reachable.";
+      return <DatabaseError message={message} />;
     }
     throw error;
   }
