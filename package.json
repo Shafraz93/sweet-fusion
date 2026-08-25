@@ -19,6 +19,7 @@
     "db:migrate": "prisma migrate dev",
     "db:push": "prisma db push",
     "db:seed": "tsx prisma/seed.ts",
+    "db:sync-remote": "tsx scripts/sync-local-to-supabase.ts",
     "db:studio": "prisma studio",
     "db:setup": "prisma generate && prisma db push && tsx prisma/seed.ts",
     "db:dev": "prisma dev -d",

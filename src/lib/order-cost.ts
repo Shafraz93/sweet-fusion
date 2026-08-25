@@ -1,4 +1,4 @@
-import { toNumber } from "@/lib/utils";
+import { normalizeDiscount, toNumber } from "@/lib/utils";
 import { getProductInventoryUnitCost } from "@/lib/inventory";
 
 type OrderLineCostInput = {
@@ -58,4 +58,16 @@ export async function getOrderDisplayTotalCost(
     total += await getOrderLineDisplayCost(item);
   }
   return total;
+}
+
+/** Sell total from line prices and discount (matches order form). */
+export function getOrderDisplayTotal(order: {
+  items: Array<{ totalPrice: Parameters<typeof toNumber>[0] }>;
+  discount: Parameters<typeof normalizeDiscount>[0];
+}): number {
+  const subtotal = order.items.reduce(
+    (sum, item) => sum + toNumber(item.totalPrice),
+    0
+  );
+  return Math.max(0, subtotal - normalizeDiscount(order.discount));
 }

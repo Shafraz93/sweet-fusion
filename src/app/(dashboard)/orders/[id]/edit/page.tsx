@@ -6,7 +6,7 @@ import { getPackagingMaterials } from "@/lib/actions/packaging-materials";
 import { OrderForm } from "@/components/forms/order-form";
 import { PageHeader } from "@/components/ui/table";
 import { getProductInventoryUnitCost } from "@/lib/inventory";
-import { toNumber } from "@/lib/utils";
+import { toNumber, normalizeDiscount } from "@/lib/utils";
 
 export const dynamic = "force-dynamic";
 
@@ -51,7 +51,7 @@ export default async function EditOrderPage({
         initialData={{
           customerId: order.customerId,
           orderDate: order.orderDate.toISOString().split("T")[0],
-          discount: toNumber(order.discount),
+          discount: normalizeDiscount(order.discount),
           paidAmount: toNumber(order.paidAmount),
           notes: order.notes ?? "",
           items: order.items.map((item) => ({

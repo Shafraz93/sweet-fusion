@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useState, useTransition, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { Plus, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -8,6 +8,7 @@ import { Input, Select, Textarea } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { createPurchaseFromForm, updatePurchaseFromForm } from "@/lib/actions/purchases";
 import { UNITS } from "@/lib/constants";
+import { formatCurrency } from "@/lib/utils";
 
 const ITEM_TYPES = [
   { value: "FINISHED_PRODUCT", label: "Finished Product" },
@@ -53,6 +54,39 @@ const emptyItem = (): LineItem => ({
   unitCost: "",
 });
 
+function normalizePaidAmount(value: string | number): string {
+  const n = typeof value === "number" ? value : parseFloat(value);
+  if (!Number.isFinite(n) || n < 0) return "0";
+  return String(Math.round(n));
+}
+
+function syncUnitCostFromPaidAmount(
+  paid: string,
+  lineItems: LineItem[]
+): LineItem[] {
+  const paidNum = parseInt(normalizePaidAmount(paid), 10) || 0;
+  const activeLines = lineItems.filter(
+    (item) => item.itemId && (parseFloat(item.quantity) || 0) > 0
+  );
+
+  if (activeLines.length !== 1 || paidNum <= 0) return lineItems;
+
+  const index = lineItems.findIndex(
+    (item) => item.itemId && (parseFloat(item.quantity) || 0) > 0
+  );
+  if (index < 0) return lineItems;
+
+  const qty = parseFloat(lineItems[index].quantity) || 0;
+  if (qty <= 0) return lineItems;
+
+  const next = [...lineItems];
+  next[index] = {
+    ...next[index],
+    unitCost: (paidNum / qty).toFixed(2),
+  };
+  return next;
+}
+
 export function PurchaseForm({
   suppliers,
   products,
@@ -67,7 +101,30 @@ export function PurchaseForm({
   const [items, setItems] = useState<LineItem[]>(
     initialData?.items?.length ? initialData.items : [emptyItem()]
   );
+  const [paidAmount, setPaidAmount] = useState(
+    normalizePaidAmount(initialData?.paidAmount ?? 0)
+  );
+  const [paidInFull, setPaidInFull] = useState(false);
   const isEdit = Boolean(recordId);
+
+  const estimateLineTotal = (item: LineItem): number => {
+    const qty = parseFloat(item.quantity) || 0;
+    const cost = parseFloat(item.unitCost) || 0;
+    return qty * cost;
+  };
+
+  const purchaseTotal = items.reduce(
+    (sum, item) => sum + estimateLineTotal(item),
+    0
+  );
+  const roundedPurchaseTotal = Math.round(purchaseTotal);
+
+  useEffect(() => {
+    if (!paidInFull) return;
+    setPaidAmount(
+      roundedPurchaseTotal > 0 ? String(roundedPurchaseTotal) : "0"
+    );
+  }, [paidInFull, roundedPurchaseTotal]);
 
   const getOptions = (type: string) => {
     switch (type) {
@@ -94,8 +151,37 @@ export function PurchaseForm({
         const selected = opts.find((o) => o.id === value);
         if (selected) next[index].unit = selected.unit;
       }
+      if (field === "quantity" || field === "itemId") {
+        if (!paidInFull) {
+          return syncUnitCostFromPaidAmount(paidAmount, next);
+        }
+      }
       return next;
     });
+  };
+
+  const handlePaidInFullChange = (checked: boolean) => {
+    setPaidInFull(checked);
+    if (checked) {
+      setPaidAmount(
+        roundedPurchaseTotal > 0 ? String(roundedPurchaseTotal) : "0"
+      );
+    }
+  };
+
+  const handlePaidAmountChange = (value: string) => {
+    const paid = normalizePaidAmount(value);
+    setPaidAmount(paid);
+    const amount = parseInt(paid, 10) || 0;
+    if (
+      roundedPurchaseTotal > 0 &&
+      amount === roundedPurchaseTotal
+    ) {
+      setPaidInFull(true);
+    } else {
+      setPaidInFull(false);
+      setItems((prev) => syncUnitCostFromPaidAmount(paid, prev));
+    }
   };
 
   const handleSubmit = (e: React.FormEvent<HTMLFormElement>) => {
@@ -126,7 +212,7 @@ export function PurchaseForm({
           supplierId: formData.get("supplierId")?.toString() ?? "",
           purchaseDate: formData.get("purchaseDate")?.toString() ?? "",
           invoiceRef: formData.get("invoiceRef")?.toString() ?? "",
-          paidAmount: formData.get("paidAmount")?.toString() ?? "0",
+          paidAmount: paidAmount || "0",
           notes: formData.get("notes")?.toString() ?? "",
           items: JSON.stringify(parsedItems),
         };
@@ -184,15 +270,46 @@ export function PurchaseForm({
               label="Invoice Reference"
               defaultValue={initialData?.invoiceRef ?? ""}
             />
-            <Input
-              id="paidAmount"
-              name="paidAmount"
-              type="number"
-              step="0.01"
-              label="Paid Amount (Rs.)"
-              defaultValue={String(initialData?.paidAmount ?? 0)}
-            />
+            <div className="space-y-1.5">
+              <div className="flex items-center justify-between gap-2">
+                <label
+                  htmlFor="paidAmount"
+                  className="block text-sm font-medium text-slate-700"
+                >
+                  Paid Amount (Rs.)
+                </label>
+                <label className="flex cursor-pointer items-center gap-2 text-sm text-slate-600">
+                  <input
+                    type="checkbox"
+                    checked={paidInFull}
+                    onChange={(e) => handlePaidInFullChange(e.target.checked)}
+                    className="h-4 w-4 rounded border-slate-300 text-rose-600 focus:ring-rose-500/20"
+                  />
+                  Fully paid
+                </label>
+              </div>
+              <input
+                id="paidAmount"
+                name="paidAmount"
+                type="number"
+                step="1"
+                min="0"
+                inputMode="numeric"
+                value={paidAmount}
+                onChange={(e) => handlePaidAmountChange(e.target.value)}
+                className="flex h-10 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 focus:border-rose-500 focus:outline-none focus:ring-2 focus:ring-rose-500/20"
+              />
+            </div>
           </div>
+
+          {purchaseTotal > 0 ? (
+            <div className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700">
+              Purchase total:{" "}
+              <span className="font-semibold text-slate-900">
+                {formatCurrency(purchaseTotal)}
+              </span>
+            </div>
+          ) : null}
 
           <Textarea
             id="notes"
@@ -215,7 +332,9 @@ export function PurchaseForm({
               </Button>
             </div>
             <p className="text-xs text-slate-500">
-              Unit cost is per single unit (e.g. one piece), not the full box or bag price.
+              Unit cost is per single unit (e.g. one piece), not the full box or bag
+              price. With one line item, paid amount ÷ quantity updates unit cost
+              automatically.
             </p>
 
             {items.map((item, index) => {

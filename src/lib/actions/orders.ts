@@ -1,6 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import {
   InventoryItemType,
@@ -12,7 +13,7 @@ import {
   updatePackagingMaterialStock,
   getProductInventoryUnitCost,
 } from "@/lib/inventory";
-import { toNumber, generateNumber, calcPaymentStatus } from "@/lib/utils";
+import { toNumber, generateNumber, calcPaymentStatus, normalizeDiscount } from "@/lib/utils";
 
 export async function getSalesOrders() {
   return prisma.salesOrder.findMany({
@@ -175,7 +176,7 @@ export async function createSalesOrder(data: {
   );
 
   const subtotal = itemsWithCosts.reduce((s, i) => s + i.totalPrice, 0);
-  const discount = data.discount ?? 0;
+  const discount = normalizeDiscount(data.discount ?? 0);
   const totalAmount = subtotal - discount;
   const paidAmount = data.paidAmount ?? 0;
 
@@ -335,7 +336,7 @@ export async function updateSalesOrder(
   );
 
   const subtotal = itemsWithCosts.reduce((s, i) => s + i.totalPrice, 0);
-  const discount = data.discount ?? 0;
+  const discount = normalizeDiscount(data.discount ?? 0);
   const totalAmount = subtotal - discount;
   const paidAmount = data.paidAmount ?? toNumber(existing.paidAmount);
 
@@ -414,11 +415,12 @@ export async function updateSalesOrderFromForm(data: Record<string, string>) {
   await updateSalesOrder(id, {
     customerId: data.customerId,
     orderDate: data.orderDate,
-    discount: parseFloat(data.discount) || 0,
+    discount: normalizeDiscount(data.discount),
     paidAmount: parseFloat(data.paidAmount) || 0,
     notes: data.notes || undefined,
     items,
   });
+  redirect("/orders");
 }
 
 export async function createSalesOrderFromForm(data: Record<string, string>) {
@@ -426,9 +428,10 @@ export async function createSalesOrderFromForm(data: Record<string, string>) {
   await createSalesOrder({
     customerId: data.customerId,
     orderDate: data.orderDate,
-    discount: parseFloat(data.discount) || 0,
+    discount: normalizeDiscount(data.discount),
     paidAmount: parseFloat(data.paidAmount) || 0,
     notes: data.notes || undefined,
     items,
   });
+  redirect("/orders");
 }

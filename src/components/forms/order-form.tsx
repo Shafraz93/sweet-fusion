@@ -1,14 +1,15 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useState, useTransition, useEffect } from "react";
 import { useRouter } from "next/navigation";
+import { isRedirectError } from "next/dist/client/components/redirect-error";
 import { Plus, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input, Select, Textarea } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { createSalesOrderFromForm, updateSalesOrderFromForm } from "@/lib/actions/orders";
 import { UNITS } from "@/lib/constants";
-import { formatCurrency } from "@/lib/utils";
+import { formatCurrency, normalizeDiscount } from "@/lib/utils";
 
 interface ProductOption {
   id: string;
@@ -81,6 +82,9 @@ export function OrderForm({
   const [items, setItems] = useState<LineItem[]>(
     initialData?.items?.length ? initialData.items : [emptyItem()]
   );
+  const [discount, setDiscount] = useState(String(initialData?.discount ?? 0));
+  const [paidAmount, setPaidAmount] = useState(String(initialData?.paidAmount ?? 0));
+  const [paidInFull, setPaidInFull] = useState(false);
   const isEdit = Boolean(recordId);
 
   const updateItem = (index: number, field: keyof LineItem, value: string) => {
@@ -172,8 +176,8 @@ export function OrderForm({
         const payload = {
           customerId: formData.get("customerId")?.toString() ?? "",
           orderDate: formData.get("orderDate")?.toString() ?? "",
-          discount: formData.get("discount")?.toString() ?? "0",
-          paidAmount: formData.get("paidAmount")?.toString() ?? "0",
+          discount: String(normalizeDiscount(discount)),
+          paidAmount: paidAmount || "0",
           notes: formData.get("notes")?.toString() ?? "",
           items: JSON.stringify(parsedItems),
         };
@@ -182,9 +186,8 @@ export function OrderForm({
         } else {
           await createSalesOrderFromForm(payload);
         }
-        router.push("/orders");
-        router.refresh();
       } catch (err) {
+        if (isRedirectError(err)) throw err;
         setError(err instanceof Error ? err.message : "Something went wrong");
       }
     });
@@ -211,6 +214,41 @@ export function OrderForm({
   };
 
   const estimatedOrderCost = items.reduce((sum, item) => sum + estimateLineCost(item), 0);
+
+  const estimateLineValue = (item: LineItem): number => {
+    const qty = parseFloat(item.quantity) || 0;
+    const price = parseFloat(item.unitPrice) || 0;
+    return qty * price;
+  };
+
+  const estimatedOrderValue = items.reduce(
+    (sum, item) => sum + estimateLineValue(item),
+    0
+  );
+  const discountAmount = normalizeDiscount(discount);
+  const orderTotal = Math.max(0, estimatedOrderValue - discountAmount);
+
+  useEffect(() => {
+    if (!paidInFull) return;
+    setPaidAmount(orderTotal > 0 ? orderTotal.toFixed(2) : "0");
+  }, [paidInFull, orderTotal]);
+
+  const handlePaidInFullChange = (checked: boolean) => {
+    setPaidInFull(checked);
+    if (checked) {
+      setPaidAmount(orderTotal > 0 ? orderTotal.toFixed(2) : "0");
+    }
+  };
+
+  const handlePaidAmountChange = (value: string) => {
+    setPaidAmount(value);
+    const amount = parseFloat(value) || 0;
+    if (Math.abs(amount - orderTotal) > 0.009) {
+      setPaidInFull(false);
+    } else if (orderTotal > 0 && Math.abs(amount - orderTotal) <= 0.009) {
+      setPaidInFull(true);
+    }
+  };
 
   return (
     <Card className="max-w-4xl">
@@ -250,17 +288,40 @@ export function OrderForm({
               name="discount"
               type="number"
               step="0.01"
+              min="0"
               label="Discount (Rs.)"
-              defaultValue={String(initialData?.discount ?? 0)}
+              value={discount}
+              onChange={(e) => setDiscount(e.target.value)}
             />
-            <Input
-              id="paidAmount"
-              name="paidAmount"
-              type="number"
-              step="0.01"
-              label="Paid Amount (Rs.)"
-              defaultValue={String(initialData?.paidAmount ?? 0)}
-            />
+            <div className="space-y-1.5">
+              <div className="flex items-center justify-between gap-2">
+                <label
+                  htmlFor="paidAmount"
+                  className="block text-sm font-medium text-slate-700"
+                >
+                  Paid Amount (Rs.)
+                </label>
+                <label className="flex cursor-pointer items-center gap-2 text-sm text-slate-600">
+                  <input
+                    type="checkbox"
+                    checked={paidInFull}
+                    onChange={(e) => handlePaidInFullChange(e.target.checked)}
+                    className="h-4 w-4 rounded border-slate-300 text-rose-600 focus:ring-rose-500/20"
+                  />
+                  Paid in full
+                </label>
+              </div>
+              <input
+                id="paidAmount"
+                name="paidAmount"
+                type="number"
+                step="0.01"
+                min="0"
+                value={paidAmount}
+                onChange={(e) => handlePaidAmountChange(e.target.value)}
+                className="flex h-10 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 focus:border-rose-500 focus:outline-none focus:ring-2 focus:ring-rose-500/20"
+              />
+            </div>
           </div>
 
           <Textarea
@@ -289,7 +350,7 @@ export function OrderForm({
                 key={index}
                 className="space-y-3 rounded-lg border border-slate-200 p-4"
               >
-                <div className="grid gap-3 sm:grid-cols-5">
+                <div className="grid gap-3 sm:grid-cols-6">
                   <Select
                     label="Product"
                     options={[
@@ -319,6 +380,16 @@ export function OrderForm({
                     value={item.unitPrice}
                     onChange={(e) => updateItem(index, "unitPrice", e.target.value)}
                   />
+                  <div>
+                    <span className="mb-1 block text-xs font-medium text-slate-700">
+                      Line Value
+                    </span>
+                    <div className="flex h-10 items-center whitespace-nowrap rounded-lg border border-slate-200 bg-slate-50 px-3 text-sm font-medium text-slate-900">
+                      {estimateLineValue(item) > 0
+                        ? formatCurrency(estimateLineValue(item))
+                        : "—"}
+                    </div>
+                  </div>
                   <div className="flex items-end">
                     <Button
                       type="button"
@@ -502,6 +573,33 @@ export function OrderForm({
               </div>
             ))}
           </div>
+
+          {estimatedOrderValue > 0 ? (
+            <div className="rounded-lg border border-rose-100 bg-rose-50 px-4 py-3 text-sm text-slate-700">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <span>
+                  Subtotal:{" "}
+                  <span className="font-medium text-slate-900">
+                    {formatCurrency(estimatedOrderValue)}
+                  </span>
+                </span>
+                {discountAmount > 0 ? (
+                  <span>
+                    Discount:{" "}
+                    <span className="font-medium text-slate-900">
+                      −{formatCurrency(discountAmount)}
+                    </span>
+                  </span>
+                ) : null}
+                <span>
+                  Order value:{" "}
+                  <span className="text-base font-semibold text-slate-900">
+                    {formatCurrency(orderTotal)}
+                  </span>
+                </span>
+              </div>
+            </div>
+          ) : null}
 
           {estimatedOrderCost > 0 ? (
             <div className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700">

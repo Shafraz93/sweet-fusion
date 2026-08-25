@@ -27,7 +27,7 @@ export async function getPurchases() {
         include: { product: true, rawMaterial: true, packagingMaterial: true },
       },
     },
-    orderBy: { purchaseDate: "desc" },
+    orderBy: { purchaseNumber: "desc" },
   });
 }
 
@@ -476,7 +476,7 @@ export async function updatePurchaseFromForm(data: Record<string, string>) {
     supplierId: data.supplierId,
     purchaseDate: data.purchaseDate,
     invoiceRef: data.invoiceRef || undefined,
-    paidAmount: parseFloat(data.paidAmount) || 0,
+    paidAmount: Math.round(parseFloat(data.paidAmount) || 0),
     notes: data.notes || undefined,
     items,
   });
@@ -488,7 +488,7 @@ export async function createPurchaseFromForm(data: Record<string, string>) {
     supplierId: data.supplierId,
     purchaseDate: data.purchaseDate,
     invoiceRef: data.invoiceRef || undefined,
-    paidAmount: parseFloat(data.paidAmount) || 0,
+    paidAmount: Math.round(parseFloat(data.paidAmount) || 0),
     notes: data.notes || undefined,
     items,
   });

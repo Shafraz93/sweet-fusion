@@ -14,7 +14,7 @@ import {
   EmptyState,
 } from "@/components/ui/table";
 import { formatCurrency, formatDate } from "@/lib/utils";
-import { getOrderDisplayTotalCost } from "@/lib/order-cost";
+import { getOrderDisplayTotalCost, getOrderDisplayTotal } from "@/lib/order-cost";
 import { EditLink } from "@/components/ui/edit-link";
 
 export const dynamic = "force-dynamic";
@@ -25,6 +25,7 @@ export default async function OrdersPage() {
     orders.map(async (order) => ({
       ...order,
       displayCost: await getOrderDisplayTotalCost(order.items),
+      displayTotal: getOrderDisplayTotal(order),
     }))
   );
 
@@ -83,7 +84,7 @@ export default async function OrdersPage() {
                 </TD>
                 <TD>{order.items.length}</TD>
                 <TD>{formatCurrency(order.displayCost)}</TD>
-                <TD>{formatCurrency(order.totalAmount)}</TD>
+                <TD>{formatCurrency(order.displayTotal)}</TD>
                 <TD>{formatCurrency(order.paidAmount)}</TD>
                 <TD>
                   <PaymentBadge status={order.paymentStatus} />

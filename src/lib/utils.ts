@@ -17,6 +17,15 @@ export function toNumber(
   return 0;
 }
 
+/** Discount is always a positive amount subtracted from subtotal. */
+export function normalizeDiscount(
+  value: DecimalLike | number | string | null | undefined
+): number {
+  const n = toNumber(value);
+  if (!Number.isFinite(n)) return 0;
+  return Math.max(0, Math.abs(n));
+}
+
 export function formatCurrency(
   amount: DecimalLike | number | string | null | undefined,
   symbol = "Rs."
