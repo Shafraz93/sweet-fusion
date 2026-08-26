@@ -15,7 +15,6 @@ export async function getDashboardData(period = "month") {
 
   const [
     salesOrders,
-    wholesaleSupplies,
     purchases,
     productionBatches,
     expenses,
@@ -31,10 +30,6 @@ export async function getDashboardData(period = "month") {
       where: dateWhere,
       include: { items: true },
     }),
-    prisma.wholesaleSupply.findMany({
-      where: dateFilterWhere(period, "supplyDate"),
-      include: { items: true },
-    }),
     prisma.purchase.findMany({ where: purchaseDateWhere }),
     prisma.productionBatch.findMany({ where: productionDateWhere }),
     prisma.expense.findMany({ where: expenseDateWhere }),
@@ -46,21 +41,15 @@ export async function getDashboardData(period = "month") {
     prisma.customer.findMany({
       include: {
         salesOrders: true,
-        wholesaleSupplies: true,
       },
     }),
     prisma.supplier.findMany({ include: { purchases: true } }),
   ]);
 
-  const retailSales = salesOrders.reduce(
+  const totalSales = salesOrders.reduce(
     (sum, o) => sum + toNumber(o.totalAmount),
     0
   );
-  const wholesaleSales = wholesaleSupplies.reduce(
-    (sum, s) => sum + toNumber(s.totalAmount),
-    0
-  );
-  const totalSales = retailSales + wholesaleSales;
 
   const totalPurchases = purchases.reduce(
     (sum, p) => sum + toNumber(p.totalAmount),
@@ -85,20 +74,12 @@ export async function getDashboardData(period = "month") {
     0
   );
 
-  const salesCost =
-    salesOrders.reduce(
-      (sum, o) =>
-        sum + o.items.reduce((s, i) => s + toNumber(i.totalCost), 0),
-      0
-    ) +
-    wholesaleSupplies.reduce(
-      (sum, s) =>
-        sum + s.items.reduce((acc, i) => acc + toNumber(i.totalCost), 0),
-      0
-    );
+  const salesCost = salesOrders.reduce(
+    (sum, o) => sum + o.items.reduce((s, i) => s + toNumber(i.totalCost), 0),
+    0
+  );
 
-  const totalProfit =
-    totalSales - salesCost - totalExpenses;
+  const totalProfit = totalSales - salesCost - totalExpenses;
 
   const inventoryValue =
     products.reduce(
@@ -119,11 +100,7 @@ export async function getDashboardData(period = "month") {
       (s, o) => s + toNumber(o.totalAmount) - toNumber(o.paidAmount),
       0
     );
-    const wholesaleBal = c.wholesaleSupplies.reduce(
-      (s, w) => s + toNumber(w.totalAmount) - toNumber(w.paidAmount),
-      0
-    );
-    return sum + orderBal + wholesaleBal;
+    return sum + orderBal;
   }, 0);
 
   const supplierOutstanding = supplierBalances.reduce((sum, s) => {

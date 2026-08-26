@@ -26,6 +26,20 @@ export function normalizeDiscount(
   return Math.max(0, Math.abs(n));
 }
 
+/** Share order-level discount to a line based on its share of subtotal. */
+export function lineRevenueAfterDiscount(
+  lineTotalPrice: DecimalLike | number | string,
+  orderSubtotal: DecimalLike | number | string | null | undefined,
+  orderDiscount: DecimalLike | number | string | null | undefined
+): number {
+  const linePrice = toNumber(lineTotalPrice);
+  const subtotal = toNumber(orderSubtotal);
+  const discount = normalizeDiscount(orderDiscount);
+  if (subtotal <= 0 || discount <= 0) return linePrice;
+  const share = linePrice / subtotal;
+  return Math.max(0, linePrice - discount * share);
+}
+
 export function formatCurrency(
   amount: DecimalLike | number | string | null | undefined,
   symbol = "Rs."

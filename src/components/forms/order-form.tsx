@@ -3,7 +3,7 @@
 import { useState, useTransition, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { isRedirectError } from "next/dist/client/components/redirect-error";
-import { Plus, Trash2 } from "lucide-react";
+import { Plus, Trash2, ChevronDown } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input, Select, Textarea } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -85,7 +85,43 @@ export function OrderForm({
   const [discount, setDiscount] = useState(String(initialData?.discount ?? 0));
   const [paidAmount, setPaidAmount] = useState(String(initialData?.paidAmount ?? 0));
   const [paidInFull, setPaidInFull] = useState(false);
+  const [expandedItems, setExpandedItems] = useState<Set<number>>(
+    () => new Set([0])
+  );
   const isEdit = Boolean(recordId);
+
+  const toggleItemExpanded = (index: number) => {
+    setExpandedItems((prev) => {
+      const next = new Set(prev);
+      if (next.has(index)) next.delete(index);
+      else next.add(index);
+      return next;
+    });
+  };
+
+  const addItem = () => {
+    setItems((prev) => {
+      const next = [...prev, emptyItem()];
+      setExpandedItems((expanded) => new Set([...expanded, next.length - 1]));
+      return next;
+    });
+  };
+
+  const removeItem = (index: number) => {
+    setItems((prev) => prev.filter((_, i) => i !== index));
+    setExpandedItems((prev) => {
+      const next = new Set<number>();
+      for (const i of prev) {
+        if (i < index) next.add(i);
+        else if (i > index) next.add(i - 1);
+      }
+      if (next.size === 0) next.add(0);
+      return next;
+    });
+  };
+
+  const getUnitLabel = (unit: string) =>
+    UNITS.find((u) => u.value === unit)?.label ?? unit;
 
   const updateItem = (index: number, field: keyof LineItem, value: string) => {
     setItems((prev) => {
@@ -338,19 +374,70 @@ export function OrderForm({
                 type="button"
                 variant="outline"
                 size="sm"
-                onClick={() => setItems((prev) => [...prev, emptyItem()])}
+                onClick={addItem}
               >
                 <Plus className="h-4 w-4" />
                 Add Item
               </Button>
             </div>
 
-            {items.map((item, index) => (
+            {items.map((item, index) => {
+              const isExpanded = expandedItems.has(index);
+              const product = products.find((p) => p.id === item.productId);
+              const productName = product?.name ?? `Item ${index + 1}`;
+              const lineValue = estimateLineValue(item);
+              const lineCost = estimateLineCost(item);
+
+              return (
               <div
                 key={index}
-                className="space-y-3 rounded-lg border border-slate-200 p-4"
+                className="overflow-hidden rounded-lg border border-slate-200"
               >
-                <div className="grid gap-3 sm:grid-cols-6">
+                <div className="flex items-stretch gap-2 bg-slate-50">
+                  <button
+                    type="button"
+                    onClick={() => toggleItemExpanded(index)}
+                    className="flex min-w-0 flex-1 items-center gap-3 px-4 py-3 text-left hover:bg-slate-100"
+                  >
+                    <ChevronDown
+                      className={`h-4 w-4 shrink-0 text-slate-500 transition-transform ${
+                        isExpanded ? "rotate-180" : ""
+                      }`}
+                    />
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate font-medium text-slate-900">
+                        {productName}
+                      </p>
+                      <p className="truncate text-xs text-slate-500">
+                        {item.quantity
+                          ? `${item.quantity} ${getUnitLabel(item.unit)}`
+                          : "No quantity"}
+                        {lineValue > 0 ? ` · ${formatCurrency(lineValue)}` : ""}
+                        {lineCost > 0 ? ` · cost ${formatCurrency(lineCost)}` : ""}
+                      </p>
+                    </div>
+                  </button>
+                  <div className="flex items-center gap-2 pr-3">
+                    {lineValue > 0 ? (
+                      <span className="hidden text-sm font-semibold text-slate-900 sm:inline">
+                        {formatCurrency(lineValue)}
+                      </span>
+                    ) : null}
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => removeItem(index)}
+                      disabled={items.length === 1}
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
+                  </div>
+                </div>
+
+                {isExpanded ? (
+              <div className="space-y-3 border-t border-slate-200 p-4">
+                <div className="grid gap-3 sm:grid-cols-5">
                   <Select
                     label="Product"
                     options={[
@@ -389,19 +476,6 @@ export function OrderForm({
                         ? formatCurrency(estimateLineValue(item))
                         : "—"}
                     </div>
-                  </div>
-                  <div className="flex items-end">
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      onClick={() =>
-                        setItems((prev) => prev.filter((_, i) => i !== index))
-                      }
-                      disabled={items.length === 1}
-                    >
-                      <Trash2 className="h-4 w-4" />
-                    </Button>
                   </div>
                 </div>
 
@@ -571,7 +645,10 @@ export function OrderForm({
                   ) : null}
                 </div>
               </div>
-            ))}
+                ) : null}
+              </div>
+              );
+            })}
           </div>
 
           {estimatedOrderValue > 0 ? (

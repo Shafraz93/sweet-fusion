@@ -36,7 +36,7 @@ export async function getOutstandingBalances() {
   const [suppliers, customers] = await Promise.all([
     prisma.supplier.findMany({ include: { purchases: true } }),
     prisma.customer.findMany({
-      include: { salesOrders: true, wholesaleSupplies: true },
+      include: { salesOrders: true },
     }),
   ]);
 
@@ -48,12 +48,8 @@ export async function getOutstandingBalances() {
 
   const customerBalances = customers.map((c) => {
     const orderTotal = c.salesOrders.reduce((acc, o) => acc + toNumber(o.totalAmount), 0);
-    const wholesaleTotal = c.wholesaleSupplies.reduce((acc, w) => acc + toNumber(w.totalAmount), 0);
     const orderPaid = c.salesOrders.reduce((acc, o) => acc + toNumber(o.paidAmount), 0);
-    const wholesalePaid = c.wholesaleSupplies.reduce((acc, w) => acc + toNumber(w.paidAmount), 0);
-    const total = orderTotal + wholesaleTotal;
-    const paid = orderPaid + wholesalePaid;
-    return { id: c.id, name: c.name, type: "CUSTOMER" as const, total, paid, balance: total - paid };
+    return { id: c.id, name: c.name, type: "CUSTOMER" as const, total: orderTotal, paid: orderPaid, balance: orderTotal - orderPaid };
   }).filter((c) => c.balance > 0);
 
   return { supplierBalances, customerBalances };

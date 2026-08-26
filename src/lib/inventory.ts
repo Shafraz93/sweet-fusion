@@ -3,6 +3,7 @@ import {
   StockMovementType,
   UnitOfMeasure,
 } from "@/generated/prisma";
+import { cache } from "react";
 import { prisma } from "@/lib/prisma";
 import { toNumber } from "@/lib/utils";
 
@@ -20,10 +21,10 @@ interface MovementInput {
   movementDate?: Date;
 }
 
-export async function getAllowNegativeInventory(): Promise<boolean> {
+export const getAllowNegativeInventory = cache(async (): Promise<boolean> => {
   const settings = await prisma.appSettings.findFirst();
   return settings?.allowNegativeInventory ?? false;
-}
+});
 
 export async function recordInventoryMovement(input: MovementInput) {
   const totalCost = Math.abs(input.quantity) * (input.unitCost ?? 0);
@@ -186,6 +187,70 @@ export async function getProductInventoryUnitCost(
 
   const product = await prisma.product.findUnique({ where: { id: productId } });
   return toNumber(product?.averageCost);
+}
+
+/** Batch unit costs for multiple products (one round-trip per lot tier). */
+export async function getProductInventoryUnitCosts(
+  productIds: string[]
+): Promise<Map<string, number>> {
+  const uniqueIds = [...new Set(productIds.filter(Boolean))];
+  const costs = new Map<string, number>();
+  if (uniqueIds.length === 0) return costs;
+
+  const openLots = await prisma.productLot.findMany({
+    where: { productId: { in: uniqueIds }, remainingQuantity: { gt: 0 } },
+  });
+
+  const lotsByProduct = new Map<string, typeof openLots>();
+  for (const lot of openLots) {
+    const list = lotsByProduct.get(lot.productId) ?? [];
+    list.push(lot);
+    lotsByProduct.set(lot.productId, list);
+  }
+
+  const missingIds: string[] = [];
+  for (const id of uniqueIds) {
+    const lots = lotsByProduct.get(id);
+    if (lots && lots.length > 0) {
+      let totalQty = 0;
+      let totalValue = 0;
+      for (const lot of lots) {
+        const qty = toNumber(lot.remainingQuantity);
+        totalQty += qty;
+        totalValue += qty * toNumber(lot.unitCost);
+      }
+      if (totalQty > 0) {
+        costs.set(id, totalValue / totalQty);
+        continue;
+      }
+    }
+    missingIds.push(id);
+  }
+
+  if (missingIds.length > 0) {
+    const latestLots = await prisma.productLot.findMany({
+      where: { productId: { in: missingIds } },
+      orderBy: { createdAt: "desc" },
+    });
+    const seen = new Set<string>();
+    for (const lot of latestLots) {
+      if (seen.has(lot.productId)) continue;
+      seen.add(lot.productId);
+      costs.set(lot.productId, toNumber(lot.unitCost));
+    }
+
+    const stillMissing = missingIds.filter((id) => !costs.has(id));
+    if (stillMissing.length > 0) {
+      const products = await prisma.product.findMany({
+        where: { id: { in: stillMissing } },
+      });
+      for (const product of products) {
+        costs.set(product.id, toNumber(product.averageCost));
+      }
+    }
+  }
+
+  return costs;
 }
 
 /** Keep product.averageCost aligned with lot inventory. */

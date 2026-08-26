@@ -67,7 +67,6 @@ export const NAV_ITEMS = [
   { href: "/production", label: "Production", icon: "Factory" },
   { href: "/inventory", label: "Inventory", icon: "Warehouse" },
   { href: "/orders", label: "Orders & Sales", icon: "Receipt" },
-  { href: "/wholesale", label: "Wholesale", icon: "Store" },
   { href: "/payments", label: "Payments", icon: "CreditCard" },
   { href: "/expenses", label: "Expenses", icon: "Wallet" },
   { href: "/reports", label: "Reports", icon: "BarChart3" },

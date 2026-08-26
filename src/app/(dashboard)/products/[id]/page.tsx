@@ -1,12 +1,20 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { getProduct } from "@/lib/actions/products";
+import { getProduct, getProductHistory } from "@/lib/actions/products";
 import { calculateProfitMetrics } from "@/lib/costing";
-import { PageHeader } from "@/components/ui/table";
+import {
+  PageHeader,
+  Table,
+  THead,
+  TBody,
+  TR,
+  TH,
+  TD,
+} from "@/components/ui/table";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
+import { Badge, PaymentBadge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { formatCurrency, toNumber } from "@/lib/utils";
+import { formatCurrency, formatDate, toNumber, lineRevenueAfterDiscount } from "@/lib/utils";
 import { unitLabel, PRODUCT_TYPES } from "@/lib/constants";
 
 export const dynamic = "force-dynamic";
@@ -15,7 +23,10 @@ export default async function ProductDetailPage({
   params,
 }: PageProps<"/products/[id]">) {
   const { id } = await params;
-  const product = await getProduct(id);
+  const [product, history] = await Promise.all([
+    getProduct(id),
+    getProductHistory(id),
+  ]);
   if (!product) notFound();
 
   const costPerUnit = toNumber(product.averageCost);
@@ -25,22 +36,109 @@ export default async function ProductDetailPage({
     costPerUnit
   );
 
+  const wastedQty = toNumber(product.currentStock);
+  const wastedValue = wastedQty * costPerUnit;
+  const soldProfit = history.soldProfit;
+  const profitMargin =
+    history.soldRevenue > 0 ? (soldProfit / history.soldRevenue) * 100 : 0;
+
+  const buyingEntries = [
+    ...history.purchases.map((item) => ({
+      key: `purchase-${item.id}`,
+      date: item.purchase.purchaseDate,
+      reference: item.purchase.purchaseNumber,
+      href: `/purchases/${item.purchaseId}/edit`,
+      source: item.purchase.supplier.name,
+      quantity: toNumber(item.quantity),
+      unit: item.unit,
+      total: toNumber(item.totalCost),
+    })),
+    ...history.production.map((batch) => ({
+      key: `production-${batch.id}`,
+      date: batch.productionDate,
+      reference: batch.batchNumber,
+      href: `/production/${batch.id}/edit`,
+      source: "Production",
+      quantity: toNumber(batch.outputQuantity),
+      unit: batch.outputUnit,
+      total: toNumber(batch.totalCost),
+    })),
+  ].sort((a, b) => b.date.getTime() - a.date.getTime());
+
+  const hasBuying = buyingEntries.length > 0;
+
   return (
     <>
       <PageHeader
         title={product.name}
         description={`SKU: ${product.sku} · ${product.category.name}`}
         action={
-          <div className="flex gap-2">
-            <Link href={`/products/${id}/edit`}>
-              <Button variant="outline">Edit Product</Button>
-            </Link>
-            <Link href={`/products/${id}/traceability`}>
-              <Button variant="outline">View Traceability</Button>
-            </Link>
-          </div>
+          <Link href={`/products/${id}/edit`}>
+            <Button variant="outline">Edit Product</Button>
+          </Link>
         }
       />
+
+      <div className="mb-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
+        <Card>
+          <CardContent className="pt-6">
+            <p className="text-sm text-slate-500">Wasted (Stock)</p>
+            <p className="text-xl font-bold text-amber-700">
+              {wastedQty} {unitLabel(product.unit)}
+            </p>
+            <p className="mt-1 text-xs text-slate-500">
+              {formatCurrency(wastedValue)} at {formatCurrency(product.averageCost)}/unit
+            </p>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="pt-6">
+            <p className="text-sm text-slate-500">Total Bought</p>
+            <p className="text-xl font-bold">
+              {history.buyingTotalQty.toLocaleString()} {unitLabel(product.unit)}
+            </p>
+            <p className="mt-1 text-xs text-slate-500">
+              {formatCurrency(history.buyingTotalCost)} cost
+            </p>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="pt-6">
+            <p className="text-sm text-slate-500">Total Sold</p>
+            <p className="text-xl font-bold">
+              {history.soldQty.toLocaleString()} {unitLabel(product.unit)}
+            </p>
+            <p className="mt-1 text-xs text-slate-500">
+              {formatCurrency(history.soldRevenue)} revenue after discounts
+            </p>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="pt-6">
+            <p className="text-sm text-slate-500">Profit</p>
+            <p className="text-xl font-bold text-emerald-700">
+              {formatCurrency(soldProfit)}
+            </p>
+            <p className="mt-1 text-xs text-slate-500">
+              {history.soldRevenue > 0
+                ? `${profitMargin.toFixed(1)}% margin · cost ${formatCurrency(history.soldCost)}`
+                : "No sales yet"}
+            </p>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="pt-6">
+            <p className="text-sm text-slate-500">Sell Price</p>
+            <p className="text-xl font-bold">
+              {formatCurrency(product.sellingPrice)}
+            </p>
+            <p className="mt-1 text-xs text-slate-500">
+              Avg cost {formatCurrency(product.averageCost)} · per unit profit{" "}
+              {formatCurrency(profit.retailProfit)}
+            </p>
+          </CardContent>
+        </Card>
+      </div>
 
       <div className="grid gap-6 lg:grid-cols-3">
         <Card className="lg:col-span-2">
@@ -55,28 +153,14 @@ export default async function ProductDetailPage({
               </Badge>
             </div>
             <div>
-              <p className="text-sm text-slate-500">Current Stock</p>
-              <p className="font-semibold">
-                {toNumber(product.currentStock)} {unitLabel(product.unit)}
-              </p>
-            </div>
-            <div>
-              <p className="text-sm text-slate-500">Selling Price</p>
-              <p className="font-semibold">{formatCurrency(product.sellingPrice)}</p>
-            </div>
-            <div>
-              <p className="text-sm text-slate-500">Wholesale Price</p>
-              <p className="font-semibold">{formatCurrency(product.wholesalePrice)}</p>
-            </div>
-            <div>
-              <p className="text-sm text-slate-500">Average Cost</p>
-              <p className="font-semibold">{formatCurrency(product.averageCost)}</p>
-            </div>
-            <div>
               <p className="text-sm text-slate-500">Min Stock Level</p>
               <p className="font-semibold">
                 {toNumber(product.minStockLevel)} {unitLabel(product.unit)}
               </p>
+            </div>
+            <div>
+              <p className="text-sm text-slate-500">Wholesale Price</p>
+              <p className="font-semibold">{formatCurrency(product.wholesalePrice)}</p>
             </div>
             {product.description && (
               <div className="sm:col-span-2">
@@ -92,8 +176,18 @@ export default async function ProductDetailPage({
             <CardTitle>Profit Analysis</CardTitle>
           </CardHeader>
           <CardContent className="space-y-3">
+            <div className="flex justify-between border-b border-slate-100 pb-3">
+              <span className="font-medium text-slate-700">Total Profit (sold)</span>
+              <span className="font-bold text-emerald-600">
+                {formatCurrency(soldProfit)}
+              </span>
+            </div>
             <div className="flex justify-between">
-              <span className="text-slate-500">Retail Profit</span>
+              <span className="text-slate-500">Profit Margin</span>
+              <span>{profitMargin.toFixed(1)}%</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-slate-500">Per Unit (at sell price)</span>
               <span className="font-semibold text-emerald-600">
                 {formatCurrency(profit.retailProfit)}
               </span>
@@ -103,14 +197,10 @@ export default async function ProductDetailPage({
               <span>{profit.retailMargin.toFixed(1)}%</span>
             </div>
             <div className="flex justify-between">
-              <span className="text-slate-500">Wholesale Profit</span>
+              <span className="text-slate-500">Wholesale Profit / unit</span>
               <span className="font-semibold text-emerald-600">
                 {formatCurrency(profit.wholesaleProfit)}
               </span>
-            </div>
-            <div className="flex justify-between">
-              <span className="text-slate-500">Wholesale Margin</span>
-              <span>{profit.wholesaleMargin.toFixed(1)}%</span>
             </div>
           </CardContent>
         </Card>
@@ -136,32 +226,110 @@ export default async function ProductDetailPage({
         </Card>
       )}
 
-      {product.productLots.length > 0 && (
-        <Card className="mt-6">
+      <div className="mt-6 grid gap-6 lg:grid-cols-2">
+        <Card>
           <CardHeader>
-            <CardTitle>Recent Product Lots</CardTitle>
+            <CardTitle>Buying History</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="space-y-3">
-              {product.productLots.map((lot) => (
-                <div
-                  key={lot.id}
-                  className="flex items-center justify-between rounded-lg border border-slate-200 px-4 py-3"
-                >
-                  <div>
-                    <p className="font-medium">{lot.lotNumber}</p>
-                    <p className="text-xs text-slate-500">
-                      Source: {lot.sourceType} · {toNumber(lot.remainingQuantity)}/
-                      {toNumber(lot.initialQuantity)} remaining
-                    </p>
-                  </div>
-                  <p className="font-semibold">{formatCurrency(lot.unitCost)}/unit</p>
-                </div>
-              ))}
-            </div>
+            {!hasBuying ? (
+              <p className="text-sm text-slate-500">No purchases or production yet.</p>
+            ) : (
+              <Table>
+                <THead>
+                  <TR>
+                    <TH>Date</TH>
+                    <TH>Reference</TH>
+                    <TH>Source</TH>
+                    <TH>Qty</TH>
+                    <TH>Total</TH>
+                  </TR>
+                </THead>
+                <TBody>
+                  {buyingEntries.map((entry) => (
+                    <TR key={entry.key}>
+                      <TD>{formatDate(entry.date)}</TD>
+                      <TD>
+                        <Link
+                          href={entry.href}
+                          className="text-rose-600 hover:underline"
+                        >
+                          {entry.reference}
+                        </Link>
+                      </TD>
+                      <TD>{entry.source}</TD>
+                      <TD>
+                        {entry.quantity} {unitLabel(entry.unit)}
+                      </TD>
+                      <TD>{formatCurrency(entry.total)}</TD>
+                    </TR>
+                  ))}
+                </TBody>
+              </Table>
+            )}
           </CardContent>
         </Card>
-      )}
+
+        <Card>
+          <CardHeader>
+            <CardTitle>Selling History</CardTitle>
+          </CardHeader>
+          <CardContent>
+            {history.sales.length === 0 ? (
+              <p className="text-sm text-slate-500">No sales yet.</p>
+            ) : (
+              <Table>
+                <THead>
+                  <TR>
+                    <TH>Date</TH>
+                    <TH>Order</TH>
+                    <TH>Customer</TH>
+                    <TH>Qty</TH>
+                    <TH>Total</TH>
+                    <TH>Profit</TH>
+                    <TH>Status</TH>
+                  </TR>
+                </THead>
+                <TBody>
+                  {history.sales.map((item) => {
+                    const lineRevenue = lineRevenueAfterDiscount(
+                      item.totalPrice,
+                      item.salesOrder.subtotal,
+                      item.salesOrder.discount
+                    );
+                    const lineCost = toNumber(item.totalCost);
+                    const lineProfit = lineRevenue - lineCost;
+                    return (
+                    <TR key={item.id}>
+                      <TD>{formatDate(item.salesOrder.orderDate)}</TD>
+                      <TD>
+                        <Link
+                          href={`/orders/${item.salesOrderId}/edit`}
+                          className="text-rose-600 hover:underline"
+                        >
+                          {item.salesOrder.orderNumber}
+                        </Link>
+                      </TD>
+                      <TD>{item.salesOrder.customer.name}</TD>
+                      <TD>
+                        {toNumber(item.quantity)} {unitLabel(item.unit)}
+                      </TD>
+                      <TD>{formatCurrency(lineRevenue)}</TD>
+                      <TD className="font-medium text-emerald-700">
+                        {formatCurrency(lineProfit)}
+                      </TD>
+                      <TD>
+                        <PaymentBadge status={item.salesOrder.paymentStatus} />
+                      </TD>
+                    </TR>
+                    );
+                  })}
+                </TBody>
+              </Table>
+            )}
+          </CardContent>
+        </Card>
+      </div>
     </>
   );
 }

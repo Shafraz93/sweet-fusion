@@ -24,7 +24,7 @@ async function ReportCards({ period }: { period: string }) {
   const reports = [
     {
       title: "Sales Report",
-      description: `${sales.orders.length} retail + ${sales.wholesale.length} wholesale`,
+      description: `${sales.orders.length} orders`,
       value: formatCurrency(sales.total),
       exportType: "sales" as const,
     },

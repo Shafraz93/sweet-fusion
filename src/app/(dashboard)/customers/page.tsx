@@ -29,7 +29,7 @@ export default async function CustomersPage({
     <>
       <PageHeader
         title="Customers"
-        description="Manage retail and wholesale customers"
+        description="Manage retail and shop customers"
         action={
           <Link href="/customers/new">
             <Button>
@@ -58,7 +58,6 @@ export default async function CustomersPage({
               <TH>Type</TH>
               <TH>Phone</TH>
               <TH>Orders</TH>
-              <TH>Wholesale</TH>
               <TH>Actions</TH>
             </TR>
           </THead>
@@ -80,7 +79,6 @@ export default async function CustomersPage({
                 </TD>
                 <TD>{customer.phone ?? "—"}</TD>
                 <TD>{customer._count.salesOrders}</TD>
-                <TD>{customer._count.wholesaleSupplies}</TD>
                 <TD>
                   <EditLink href={`/customers/${customer.id}/edit`} />
                 </TD>

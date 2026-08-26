@@ -14,7 +14,7 @@ export async function getCustomers(search?: string, type?: CustomerType) {
       ],
     },
     include: {
-      _count: { select: { salesOrders: true, wholesaleSupplies: true } },
+      _count: { select: { salesOrders: true } },
     },
     orderBy: { name: "asc" },
   });
@@ -28,10 +28,6 @@ export async function getCustomer(id: string) {
         orderBy: { orderDate: "desc" },
         include: { items: { include: { product: true } } },
       },
-      wholesaleSupplies: {
-        orderBy: { supplyDate: "desc" },
-        include: { items: { include: { product: true } } },
-      },
       payments: { orderBy: { paymentDate: "desc" } },
     },
   });
@@ -41,23 +37,15 @@ export async function getCustomer(id: string) {
     (s, o) => s + toNumber(o.totalAmount),
     0
   );
-  const wholesaleTotal = customer.wholesaleSupplies.reduce(
-    (s, w) => s + toNumber(w.totalAmount),
-    0
-  );
   const orderPaid = customer.salesOrders.reduce(
     (s, o) => s + toNumber(o.paidAmount),
-    0
-  );
-  const wholesalePaid = customer.wholesaleSupplies.reduce(
-    (s, w) => s + toNumber(w.paidAmount),
     0
   );
 
   return {
     ...customer,
-    totalPurchases: orderTotal + wholesaleTotal,
-    outstandingBalance: orderTotal + wholesaleTotal - orderPaid - wholesalePaid,
+    totalPurchases: orderTotal,
+    outstandingBalance: orderTotal - orderPaid,
   };
 }
 

@@ -210,10 +210,6 @@ export async function createPurchase(data: {
   }
 
   revalidatePath("/purchases");
-  revalidatePath("/inventory");
-  revalidatePath("/raw-materials");
-  revalidatePath("/packaging");
-  revalidatePath("/products");
   return purchase;
 }
 
@@ -460,11 +456,6 @@ export async function updatePurchase(
   }
 
   revalidatePath("/purchases");
-  revalidatePath(`/purchases/${id}/edit`);
-  revalidatePath("/inventory");
-  revalidatePath("/products");
-  revalidatePath("/raw-materials");
-  revalidatePath("/packaging");
   return purchase;
 }
 

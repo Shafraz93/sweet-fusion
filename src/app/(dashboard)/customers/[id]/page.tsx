@@ -30,10 +30,7 @@ export default async function CustomerDetailPage({
               <Button variant="outline">Edit Customer</Button>
             </Link>
             <Link href="/orders/new">
-              <Button variant="outline">New Order</Button>
-            </Link>
-            <Link href="/wholesale/new">
-              <Button>New Wholesale</Button>
+              <Button>New Order</Button>
             </Link>
           </div>
         }
@@ -65,8 +62,7 @@ export default async function CustomerDetailPage({
         </Card>
       </div>
 
-      <div className="grid gap-6 lg:grid-cols-2">
-        <Card>
+      <Card>
           <CardHeader>
             <CardTitle>Sales Orders</CardTitle>
           </CardHeader>
@@ -99,41 +95,6 @@ export default async function CustomerDetailPage({
             )}
           </CardContent>
         </Card>
-
-        <Card>
-          <CardHeader>
-            <CardTitle>Wholesale Supplies</CardTitle>
-          </CardHeader>
-          <CardContent>
-            {customer.wholesaleSupplies.length === 0 ? (
-              <p className="text-sm text-slate-500">No wholesale supplies yet.</p>
-            ) : (
-              <Table>
-                <THead>
-                  <TR>
-                    <TH>Number</TH>
-                    <TH>Date</TH>
-                    <TH>Total</TH>
-                    <TH>Status</TH>
-                  </TR>
-                </THead>
-                <TBody>
-                  {customer.wholesaleSupplies.map((supply) => (
-                    <TR key={supply.id}>
-                      <TD>{supply.supplyNumber}</TD>
-                      <TD>{formatDate(supply.supplyDate)}</TD>
-                      <TD>{formatCurrency(supply.totalAmount)}</TD>
-                      <TD>
-                        <PaymentBadge status={supply.paymentStatus} />
-                      </TD>
-                    </TR>
-                  ))}
-                </TBody>
-              </Table>
-            )}
-          </CardContent>
-        </Card>
-      </div>
     </>
   );
 }

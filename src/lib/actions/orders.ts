@@ -11,7 +11,7 @@ import {
 import {
   recordInventoryMovement,
   updatePackagingMaterialStock,
-  getProductInventoryUnitCost,
+  getProductInventoryUnitCosts,
 } from "@/lib/inventory";
 import { toNumber, generateNumber, calcPaymentStatus, normalizeDiscount } from "@/lib/utils";
 
@@ -72,18 +72,19 @@ interface ResolvedOrderItem extends OrderItemInput {
 }
 
 async function resolveOrderItemCosts(
-  item: OrderItemInput
+  item: OrderItemInput,
+  productUnitCosts: Map<string, number>,
+  packagingById: Map<string, { averageCost: Parameters<typeof toNumber>[0] }>
 ): Promise<ResolvedOrderItem> {
-  const productUnitCost = await getProductInventoryUnitCost(item.productId);
+  const productUnitCost = productUnitCosts.get(item.productId) ?? 0;
 
   let totalPackagingCost = 0;
   const packagingRecords: ResolvedPackagingRecord[] = [];
 
   for (const mat of item.packaging ?? []) {
     if (!mat.packagingMaterialId || mat.quantityUsed <= 0) continue;
-    const material = await prisma.packagingMaterial.findUniqueOrThrow({
-      where: { id: mat.packagingMaterialId },
-    });
+    const material = packagingById.get(mat.packagingMaterialId);
+    if (!material) continue;
     const unitCost = toNumber(material.averageCost);
     const totalCost = mat.quantityUsed * unitCost;
     totalPackagingCost += totalCost;
@@ -108,6 +109,41 @@ async function resolveOrderItemCosts(
     totalCost: item.quantity * unitCost,
     packagingRecords,
   };
+}
+
+async function resolveAllOrderItemCosts(
+  items: OrderItemInput[]
+): Promise<ResolvedOrderItem[]> {
+  const packagingIds = new Set<string>();
+  const productIds: string[] = [];
+
+  for (const item of items) {
+    productIds.push(item.productId);
+    for (const mat of item.packaging ?? []) {
+      if (mat.packagingMaterialId && mat.quantityUsed > 0) {
+        packagingIds.add(mat.packagingMaterialId);
+      }
+    }
+  }
+
+  const [productUnitCosts, packagingMaterials] = await Promise.all([
+    getProductInventoryUnitCosts(productIds),
+    packagingIds.size > 0
+      ? prisma.packagingMaterial.findMany({
+          where: { id: { in: [...packagingIds] } },
+        })
+      : Promise.resolve([]),
+  ]);
+
+  const packagingById = new Map(
+    packagingMaterials.map((material) => [material.id, material])
+  );
+
+  return Promise.all(
+    items.map((item) =>
+      resolveOrderItemCosts(item, productUnitCosts, packagingById)
+    )
+  );
 }
 
 async function reverseOrderPackaging(
@@ -171,9 +207,7 @@ export async function createSalesOrder(data: {
   const count = await prisma.salesOrder.count();
   const orderNumber = await generateNumber("ORD", count);
 
-  const itemsWithCosts = await Promise.all(
-    data.items.map((item) => resolveOrderItemCosts(item))
-  );
+  const itemsWithCosts = await resolveAllOrderItemCosts(data.items);
 
   const subtotal = itemsWithCosts.reduce((s, i) => s + i.totalPrice, 0);
   const discount = normalizeDiscount(data.discount ?? 0);
@@ -243,10 +277,6 @@ export async function createSalesOrder(data: {
   await applyOrderPackaging(order.id, itemsWithCosts);
 
   revalidatePath("/orders");
-  revalidatePath("/packaging");
-  revalidatePath("/inventory");
-  revalidatePath("/products");
-  revalidatePath("/");
   return order;
 }
 
@@ -331,9 +361,7 @@ export async function updateSalesOrder(
 
   await prisma.salesOrderItem.deleteMany({ where: { salesOrderId: id } });
 
-  const itemsWithCosts = await Promise.all(
-    data.items.map((item) => resolveOrderItemCosts(item))
-  );
+  const itemsWithCosts = await resolveAllOrderItemCosts(data.items);
 
   const subtotal = itemsWithCosts.reduce((s, i) => s + i.totalPrice, 0);
   const discount = normalizeDiscount(data.discount ?? 0);
@@ -400,11 +428,6 @@ export async function updateSalesOrder(
   await applyOrderPackaging(order.id, itemsWithCosts);
 
   revalidatePath("/orders");
-  revalidatePath(`/orders/${id}/edit`);
-  revalidatePath("/packaging");
-  revalidatePath("/inventory");
-  revalidatePath("/products");
-  revalidatePath("/");
   return order;
 }
 

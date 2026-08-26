@@ -12,7 +12,7 @@ import {
   recordInventoryMovement,
   updateAverageCost,
 } from "@/lib/inventory";
-import { toNumber, generateNumber, calcPaymentStatus } from "@/lib/utils";
+import { toNumber, generateNumber, calcPaymentStatus, lineRevenueAfterDiscount } from "@/lib/utils";
 
 export async function getProducts(search?: string) {
   return prisma.product.findMany({
@@ -29,28 +29,134 @@ export async function getProducts(search?: string) {
   });
 }
 
+/** All-time sales totals grouped by product (revenue after order discounts). */
+export async function getProductSalesTotals() {
+  const items = await prisma.salesOrderItem.findMany({
+    select: {
+      productId: true,
+      quantity: true,
+      totalPrice: true,
+      totalCost: true,
+      salesOrder: { select: { subtotal: true, discount: true } },
+    },
+  });
+
+  const byProduct = new Map<
+    string,
+    { quantity: number; revenue: number; cost: number; profit: number }
+  >();
+
+  for (const item of items) {
+    const revenue = lineRevenueAfterDiscount(
+      item.totalPrice,
+      item.salesOrder.subtotal,
+      item.salesOrder.discount
+    );
+    const cost = toNumber(item.totalCost);
+    const existing = byProduct.get(item.productId) ?? {
+      quantity: 0,
+      revenue: 0,
+      cost: 0,
+      profit: 0,
+    };
+    byProduct.set(item.productId, {
+      quantity: existing.quantity + toNumber(item.quantity),
+      revenue: existing.revenue + revenue,
+      cost: existing.cost + cost,
+      profit: existing.revenue + revenue - (existing.cost + cost),
+    });
+  }
+
+  return byProduct;
+}
+
+/** All-time sales summary across all orders. */
+export async function getSalesSummary() {
+  const [orderAgg, itemAgg] = await Promise.all([
+    prisma.salesOrder.aggregate({
+      _sum: { totalAmount: true },
+      _count: true,
+    }),
+    prisma.salesOrderItem.aggregate({
+      _sum: { quantity: true, totalPrice: true, totalCost: true },
+    }),
+  ]);
+
+  const totalRevenue = toNumber(orderAgg._sum.totalAmount);
+  const soldCost = toNumber(itemAgg._sum.totalCost);
+
+  return {
+    orderCount: orderAgg._count,
+    totalRevenue,
+    itemsSold: toNumber(itemAgg._sum.quantity),
+    lineRevenue: toNumber(itemAgg._sum.totalPrice),
+    totalCost: soldCost,
+    totalProfit: totalRevenue - soldCost,
+  };
+}
+
 export async function getProduct(id: string) {
   return prisma.product.findUnique({
     where: { id },
     include: {
       category: true,
       recipes: { include: { ingredients: { include: { rawMaterial: true } } } },
-      productLots: {
-        orderBy: { createdAt: "desc" },
-        take: 20,
-        include: {
-          purchaseItem: { include: { purchase: { include: { supplier: true } } } },
-          productionBatch: true,
-          packagingOperation: true,
-        },
-      },
-      productionBatches: {
-        orderBy: { productionDate: "desc" },
-        take: 10,
-        include: { ingredients: { include: { rawMaterial: true } } },
-      },
     },
   });
+}
+
+export async function getProductHistory(productId: string) {
+  const [purchases, production, sales] = await Promise.all([
+    prisma.purchaseItem.findMany({
+      where: { productId, itemType: "FINISHED_PRODUCT" },
+      include: {
+        purchase: { include: { supplier: true } },
+      },
+      orderBy: { purchase: { purchaseDate: "desc" } },
+    }),
+    prisma.productionBatch.findMany({
+      where: { productId },
+      orderBy: { productionDate: "desc" },
+    }),
+    prisma.salesOrderItem.findMany({
+      where: { productId },
+      include: {
+        salesOrder: { include: { customer: true } },
+      },
+      orderBy: { salesOrder: { orderDate: "desc" } },
+    }),
+  ]);
+
+  const buyingTotalQty = purchases.reduce((s, p) => s + toNumber(p.quantity), 0)
+    + production.reduce((s, b) => s + toNumber(b.outputQuantity), 0);
+  const buyingTotalCost = purchases.reduce((s, p) => s + toNumber(p.totalCost), 0)
+    + production.reduce((s, b) => s + toNumber(b.totalCost), 0);
+
+  const soldQty = sales.reduce((s, item) => s + toNumber(item.quantity), 0);
+  const soldRevenue = sales.reduce(
+    (s, item) =>
+      s +
+      lineRevenueAfterDiscount(
+        item.totalPrice,
+        item.salesOrder.subtotal,
+        item.salesOrder.discount
+      ),
+    0
+  );
+  const soldCost = sales.reduce((s, item) => s + toNumber(item.totalCost), 0);
+  const soldProfit = soldRevenue - soldCost;
+
+  return {
+    purchases,
+    production,
+    sales,
+    buyingTotalQty,
+    buyingTotalCost,
+    soldQty,
+    soldRevenue,
+    soldCost,
+    soldProfit,
+  };
 }
 
 export async function getCategories() {
@@ -188,64 +294,4 @@ export async function createProductFromForm(data: Record<string, string>) {
 
 export async function createCategoryFromForm(data: Record<string, string>) {
   await createCategory(data.name, data.description || undefined);
-}
-
-export async function getProductTraceability(productId: string) {
-  const product = await prisma.product.findUniqueOrThrow({
-    where: { id: productId },
-    include: {
-      category: true,
-      productLots: {
-        include: {
-          purchaseItem: {
-            include: {
-              purchase: { include: { supplier: true } },
-            },
-          },
-          productionBatch: {
-            include: {
-              ingredients: { include: { rawMaterial: true } },
-              recipe: true,
-            },
-          },
-          packagingOperation: {
-            include: {
-              materials: { include: { packagingMaterial: true } },
-              sourceLot: true,
-            },
-          },
-          salesOrderItems: { include: { salesOrder: { include: { customer: true } } } },
-          wholesaleItems: { include: { wholesaleSupply: { include: { customer: true } } } },
-        },
-        orderBy: { createdAt: "asc" },
-      },
-      purchaseItems: {
-        include: {
-          purchase: { include: { supplier: true } },
-        },
-      },
-      productionBatches: {
-        include: {
-          ingredients: { include: { rawMaterial: true } },
-          recipe: true,
-        },
-      },
-      packagingOps: {
-        include: {
-          materials: { include: { packagingMaterial: true } },
-        },
-      },
-    },
-  });
-
-  const movements = await prisma.inventoryMovement.findMany({
-    where: {
-      itemType: InventoryItemType.FINISHED_PRODUCT,
-      itemId: productId,
-    },
-    orderBy: { movementDate: "desc" },
-    take: 50,
-  });
-
-  return { product, movements };
 }

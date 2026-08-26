@@ -14,20 +14,18 @@ import {
   EmptyState,
 } from "@/components/ui/table";
 import { formatCurrency, formatDate } from "@/lib/utils";
-import { getOrderDisplayTotalCost, getOrderDisplayTotal } from "@/lib/order-cost";
+import { getOrderTotalCost, getOrderDisplayTotal } from "@/lib/order-cost";
 import { EditLink } from "@/components/ui/edit-link";
 
 export const dynamic = "force-dynamic";
 
 export default async function OrdersPage() {
   const orders = await getSalesOrders();
-  const ordersWithCost = await Promise.all(
-    orders.map(async (order) => ({
-      ...order,
-      displayCost: await getOrderDisplayTotalCost(order.items),
-      displayTotal: getOrderDisplayTotal(order),
-    }))
-  );
+  const ordersWithCost = orders.map((order) => ({
+    ...order,
+    displayCost: getOrderTotalCost(order.items),
+    displayTotal: getOrderDisplayTotal(order),
+  }));
 
   return (
     <>

@@ -15,18 +15,9 @@ export async function getSalesReport(period = "month") {
     orderBy: { orderDate: "desc" },
   });
 
-  const wholesale = await prisma.wholesaleSupply.findMany({
-    where: dateFilterWhere(period, "supplyDate"),
-    include: {
-      customer: true,
-      items: { include: { product: true } },
-    },
-  });
+  const total = orders.reduce((s, o) => s + toNumber(o.totalAmount), 0);
 
-  const totalRetail = orders.reduce((s, o) => s + toNumber(o.totalAmount), 0);
-  const totalWholesale = wholesale.reduce((s, w) => s + toNumber(w.totalAmount), 0);
-
-  return { orders, wholesale, totalRetail, totalWholesale, total: totalRetail + totalWholesale };
+  return { orders, total };
 }
 
 export async function getPurchaseReport(period = "month") {
@@ -52,13 +43,9 @@ export async function getProductionReport(period = "month") {
 }
 
 export async function getProfitReport(period = "month") {
-  const [sales, wholesale, expenses, production, packaging] = await Promise.all([
+  const [sales, expenses, production, packaging] = await Promise.all([
     prisma.salesOrder.findMany({
       where: dateFilterWhere(period, "orderDate"),
-      include: { items: true },
-    }),
-    prisma.wholesaleSupply.findMany({
-      where: dateFilterWhere(period, "supplyDate"),
       include: { items: true },
     }),
     prisma.expense.findMany({ where: dateFilterWhere(period, "expenseDate") }),
@@ -70,19 +57,12 @@ export async function getProfitReport(period = "month") {
     }),
   ]);
 
-  const revenue =
-    sales.reduce((s, o) => s + toNumber(o.totalAmount), 0) +
-    wholesale.reduce((s, w) => s + toNumber(w.totalAmount), 0);
+  const revenue = sales.reduce((s, o) => s + toNumber(o.totalAmount), 0);
 
-  const cogs =
-    sales.reduce(
-      (s, o) => s + o.items.reduce((a, i) => a + toNumber(i.totalCost), 0),
-      0
-    ) +
-    wholesale.reduce(
-      (s, w) => s + w.items.reduce((a, i) => a + toNumber(i.totalCost), 0),
-      0
-    );
+  const cogs = sales.reduce(
+    (s, o) => s + o.items.reduce((a, i) => a + toNumber(i.totalCost), 0),
+    0
+  );
 
   const totalExpenses = expenses.reduce((s, e) => s + toNumber(e.amount), 0);
   const productionCost = production.reduce((s, p) => s + toNumber(p.totalCost), 0);
@@ -126,16 +106,12 @@ export async function exportReportCSV(
 ): Promise<string> {
   switch (type) {
     case "sales": {
-      const { orders, wholesale } = await getSalesReport(period);
+      const { orders } = await getSalesReport(period);
       const rows = [
-        "Type,Number,Date,Customer,Amount,Status",
+        "Number,Date,Customer,Amount,Status",
         ...orders.map(
           (o) =>
-            `Retail,${o.orderNumber},${o.orderDate.toISOString().split("T")[0]},${o.customer.name},${toNumber(o.totalAmount)},${o.paymentStatus}`
-        ),
-        ...wholesale.map(
-          (w) =>
-            `Wholesale,${w.supplyNumber},${w.supplyDate.toISOString().split("T")[0]},${w.customer.name},${toNumber(w.totalAmount)},${w.paymentStatus}`
+            `${o.orderNumber},${o.orderDate.toISOString().split("T")[0]},${o.customer.name},${toNumber(o.totalAmount)},${o.paymentStatus}`
         ),
       ];
       return rows.join("\n");
