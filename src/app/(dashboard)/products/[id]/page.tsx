@@ -67,6 +67,32 @@ export default async function ProductDetailPage({
 
   const hasBuying = buyingEntries.length > 0;
 
+  const purchaseCostTotal = history.purchases.reduce(
+    (sum, item) => sum + toNumber(item.totalCost),
+    0
+  );
+  const productionCostTotal = history.production.reduce(
+    (sum, batch) => sum + toNumber(batch.totalCost),
+    0
+  );
+  const productionIngredientCost = history.production.reduce(
+    (sum, batch) => sum + toNumber(batch.ingredientCost),
+    0
+  );
+  const productionLabourCost = history.production.reduce(
+    (sum, batch) => sum + toNumber(batch.labourCost),
+    0
+  );
+  const productionOtherCost = history.production.reduce(
+    (sum, batch) => sum + toNumber(batch.otherCost),
+    0
+  );
+  const soldPackagingCost = history.sales.reduce(
+    (sum, item) => sum + toNumber(item.packagingCost),
+    0
+  );
+  const soldProductCost = history.soldCost - soldPackagingCost;
+
   return (
     <>
       <PageHeader
@@ -98,8 +124,40 @@ export default async function ProductDetailPage({
               {history.buyingTotalQty.toLocaleString()} {unitLabel(product.unit)}
             </p>
             <p className="mt-1 text-xs text-slate-500">
-              {formatCurrency(history.buyingTotalCost)} cost
+              {formatCurrency(history.buyingTotalCost)} total cost
             </p>
+            {history.buyingTotalCost > 0 ? (
+              <ul className="mt-2 space-y-0.5 text-xs text-slate-600">
+                {purchaseCostTotal > 0 ? (
+                  <li className="flex justify-between gap-2">
+                    <span>Purchases</span>
+                    <span className="font-medium">{formatCurrency(purchaseCostTotal)}</span>
+                  </li>
+                ) : null}
+                {productionCostTotal > 0 ? (
+                  <li className="flex justify-between gap-2">
+                    <span>Production</span>
+                    <span className="font-medium">{formatCurrency(productionCostTotal)}</span>
+                  </li>
+                ) : null}
+                {productionCostTotal > 0 ? (
+                  <>
+                    <li className="flex justify-between gap-2 pl-2 text-slate-500">
+                      <span>Ingredients</span>
+                      <span>{formatCurrency(productionIngredientCost)}</span>
+                    </li>
+                    <li className="flex justify-between gap-2 pl-2 text-slate-500">
+                      <span>Labour</span>
+                      <span>{formatCurrency(productionLabourCost)}</span>
+                    </li>
+                    <li className="flex justify-between gap-2 pl-2 text-slate-500">
+                      <span>Other</span>
+                      <span>{formatCurrency(productionOtherCost)}</span>
+                    </li>
+                  </>
+                ) : null}
+              </ul>
+            ) : null}
           </CardContent>
         </Card>
         <Card>
@@ -107,9 +165,6 @@ export default async function ProductDetailPage({
             <p className="text-sm text-slate-500">Total Sold</p>
             <p className="text-xl font-bold">
               {history.soldQty.toLocaleString()} {unitLabel(product.unit)}
-            </p>
-            <p className="mt-1 text-xs text-slate-500">
-              {formatCurrency(history.soldRevenue)} revenue after discounts
             </p>
           </CardContent>
         </Card>
@@ -124,17 +179,29 @@ export default async function ProductDetailPage({
                 ? `${profitMargin.toFixed(1)}% margin · cost ${formatCurrency(history.soldCost)}`
                 : "No sales yet"}
             </p>
+            {history.soldCost > 0 ? (
+              <ul className="mt-2 space-y-0.5 text-xs text-slate-600">
+                <li className="flex justify-between gap-2">
+                  <span>Product cost</span>
+                  <span className="font-medium">{formatCurrency(soldProductCost)}</span>
+                </li>
+                <li className="flex justify-between gap-2">
+                  <span>Packaging cost</span>
+                  <span className="font-medium">{formatCurrency(soldPackagingCost)}</span>
+                </li>
+              </ul>
+            ) : null}
           </CardContent>
         </Card>
         <Card>
           <CardContent className="pt-6">
-            <p className="text-sm text-slate-500">Sell Price</p>
+            <p className="text-sm text-slate-500">Revenue</p>
             <p className="text-xl font-bold">
-              {formatCurrency(product.sellingPrice)}
+              {formatCurrency(history.soldRevenue)}
             </p>
             <p className="mt-1 text-xs text-slate-500">
-              Avg cost {formatCurrency(product.averageCost)} · per unit profit{" "}
-              {formatCurrency(profit.retailProfit)}
+              After discounts · {history.soldQty.toLocaleString()}{" "}
+              {unitLabel(product.unit)} sold
             </p>
           </CardContent>
         </Card>
@@ -159,8 +226,22 @@ export default async function ProductDetailPage({
               </p>
             </div>
             <div>
+              <p className="text-sm text-slate-500">Sell Price</p>
+              <p className="font-semibold">{formatCurrency(product.sellingPrice)}</p>
+            </div>
+            <div>
+              <p className="text-sm text-slate-500">Average Cost</p>
+              <p className="font-semibold">{formatCurrency(product.averageCost)}</p>
+            </div>
+            <div>
               <p className="text-sm text-slate-500">Wholesale Price</p>
               <p className="font-semibold">{formatCurrency(product.wholesalePrice)}</p>
+            </div>
+            <div>
+              <p className="text-sm text-slate-500">Per Unit Profit</p>
+              <p className="font-semibold text-emerald-700">
+                {formatCurrency(profit.retailProfit)}
+              </p>
             </div>
             {product.description && (
               <div className="sm:col-span-2">
@@ -242,6 +323,7 @@ export default async function ProductDetailPage({
                     <TH>Reference</TH>
                     <TH>Source</TH>
                     <TH>Qty</TH>
+                    <TH>Unit Cost</TH>
                     <TH>Total</TH>
                   </TR>
                 </THead>
@@ -260,6 +342,11 @@ export default async function ProductDetailPage({
                       <TD>{entry.source}</TD>
                       <TD>
                         {entry.quantity} {unitLabel(entry.unit)}
+                      </TD>
+                      <TD>
+                        {entry.quantity > 0
+                          ? formatCurrency(entry.total / entry.quantity)
+                          : "—"}
                       </TD>
                       <TD>{formatCurrency(entry.total)}</TD>
                     </TR>
@@ -285,7 +372,8 @@ export default async function ProductDetailPage({
                     <TH>Order</TH>
                     <TH>Customer</TH>
                     <TH>Qty</TH>
-                    <TH>Total</TH>
+                    <TH>Revenue</TH>
+                    <TH>Cost</TH>
                     <TH>Profit</TH>
                     <TH>Status</TH>
                   </TR>
@@ -298,6 +386,7 @@ export default async function ProductDetailPage({
                       item.salesOrder.discount
                     );
                     const lineCost = toNumber(item.totalCost);
+                    const lineProductCost = lineCost - toNumber(item.packagingCost);
                     const lineProfit = lineRevenue - lineCost;
                     return (
                     <TR key={item.id}>
@@ -315,6 +404,15 @@ export default async function ProductDetailPage({
                         {toNumber(item.quantity)} {unitLabel(item.unit)}
                       </TD>
                       <TD>{formatCurrency(lineRevenue)}</TD>
+                      <TD>
+                        <span className="block">{formatCurrency(lineCost)}</span>
+                        {toNumber(item.packagingCost) > 0 ? (
+                          <span className="text-xs text-slate-500">
+                            product {formatCurrency(lineProductCost)} + pkg{" "}
+                            {formatCurrency(item.packagingCost)}
+                          </span>
+                        ) : null}
+                      </TD>
                       <TD className="font-medium text-emerald-700">
                         {formatCurrency(lineProfit)}
                       </TD>

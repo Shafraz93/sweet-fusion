@@ -17,7 +17,8 @@ import {
   updatePackagingMaterialStock,
   updateProductStock,
 } from "@/lib/inventory";
-import { toNumber, generateNumber, calcPaymentStatus } from "@/lib/utils";
+import { getNextLotNumber } from "@/lib/numbering";
+import { toNumber, generateNumber, calcPaymentStatus, nextSequentialNumber } from "@/lib/utils";
 
 export async function getPurchases() {
   return prisma.purchase.findMany({
@@ -86,6 +87,8 @@ export async function createPurchase(data: {
     include: { items: true },
   });
 
+  let nextLotNumber = await getNextLotNumber();
+
   for (const item of purchase.items) {
     if (item.itemType === PurchaseItemType.FINISHED_PRODUCT && item.productId) {
       const product = await prisma.product.findUniqueOrThrow({
@@ -108,10 +111,9 @@ export async function createPurchase(data: {
         },
       });
 
-      const lotCount = await prisma.productLot.count();
       await prisma.productLot.create({
         data: {
-          lotNumber: await generateNumber("LOT", lotCount),
+          lotNumber: nextLotNumber,
           productId: item.productId,
           sourceType: ProductLotSourceType.PURCHASE,
           purchaseItemId: item.id,
@@ -122,6 +124,7 @@ export async function createPurchase(data: {
           unitCost,
         },
       });
+      nextLotNumber = nextSequentialNumber("LOT", nextLotNumber);
 
       await syncProductAverageCostFromLots(item.productId);
 
@@ -355,6 +358,8 @@ export async function updatePurchase(
     include: { items: true },
   });
 
+  let nextLotNumber = await getNextLotNumber();
+
   for (const item of purchase.items) {
     if (item.itemType === PurchaseItemType.FINISHED_PRODUCT && item.productId) {
       const product = await prisma.product.findUniqueOrThrow({
@@ -372,10 +377,9 @@ export async function updatePurchase(
         where: { id: item.productId },
         data: { currentStock: toNumber(product.currentStock) + qty, averageCost: newAvg },
       });
-      const lotCount = await prisma.productLot.count();
       await prisma.productLot.create({
         data: {
-          lotNumber: await generateNumber("LOT", lotCount),
+          lotNumber: nextLotNumber,
           productId: item.productId,
           sourceType: ProductLotSourceType.PURCHASE,
           purchaseItemId: item.id,
@@ -386,6 +390,7 @@ export async function updatePurchase(
           unitCost,
         },
       });
+      nextLotNumber = nextSequentialNumber("LOT", nextLotNumber);
       await syncProductAverageCostFromLots(item.productId);
       await recordInventoryMovement({
         itemType: InventoryItemType.FINISHED_PRODUCT,

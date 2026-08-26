@@ -40,6 +40,20 @@ export function lineRevenueAfterDiscount(
   return Math.max(0, linePrice - discount * share);
 }
 
+/** Unit cost so quantity × cost equals line total (avoids 2-decimal rounding drift). */
+export function unitCostForLineTotal(
+  lineTotal: number,
+  quantity: number
+): number {
+  if (quantity <= 0 || !Number.isFinite(lineTotal)) return 0;
+  return lineTotal / quantity;
+}
+
+export function formatUnitCost(amount: number): string {
+  if (!Number.isFinite(amount)) return "0";
+  return String(amount);
+}
+
 export function formatCurrency(
   amount: DecimalLike | number | string | null | undefined,
   symbol = "Rs."
@@ -76,6 +90,20 @@ export async function generateNumber(
 ): Promise<string> {
   const num = String(count + 1).padStart(4, "0");
   return `${prefix}-${num}`;
+}
+
+/** Next value after `latest` (e.g. LOT-0004 → LOT-0005). Safe when rows were deleted. */
+export function nextSequentialNumber(
+  prefix: string,
+  latest: string | null | undefined
+): string {
+  if (!latest) {
+    return `${prefix}-0001`;
+  }
+  const escaped = prefix.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const match = latest.match(new RegExp(`^${escaped}-(\\d+)$`, "i"));
+  const next = match ? parseInt(match[1], 10) + 1 : 1;
+  return `${prefix}-${String(next).padStart(4, "0")}`;
 }
 
 export function calcPaymentStatus(

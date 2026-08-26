@@ -13,6 +13,7 @@ import {
   updateAverageCost,
   syncProductAverageCostFromLots,
 } from "@/lib/inventory";
+import { getNextLotNumber } from "@/lib/numbering";
 import { toNumber, generateNumber } from "@/lib/utils";
 
 export async function getProductionBatches() {
@@ -149,10 +150,9 @@ export async function createProductionBatch(data: {
     },
   });
 
-  const lotCount = await prisma.productLot.count();
   await prisma.productLot.create({
     data: {
-      lotNumber: await generateNumber("LOT", lotCount),
+      lotNumber: await getNextLotNumber(),
       productId: data.productId,
       sourceType: ProductLotSourceType.PRODUCTION,
       productionBatchId: batch.id,
@@ -276,10 +276,9 @@ export async function createPackagingOperation(data: {
     });
   }
 
-  const lotCount = await prisma.productLot.count();
   await prisma.productLot.create({
     data: {
-      lotNumber: await generateNumber("LOT", lotCount),
+      lotNumber: await getNextLotNumber(),
       productId: data.productId,
       sourceType: ProductLotSourceType.PACKAGING,
       packagingOperationId: operation.id,

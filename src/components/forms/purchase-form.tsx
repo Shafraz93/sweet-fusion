@@ -8,7 +8,7 @@ import { Input, Select, Textarea } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { createPurchaseFromForm, updatePurchaseFromForm } from "@/lib/actions/purchases";
 import { UNITS } from "@/lib/constants";
-import { formatCurrency } from "@/lib/utils";
+import { formatCurrency, unitCostForLineTotal, formatUnitCost } from "@/lib/utils";
 
 const ITEM_TYPES = [
   { value: "FINISHED_PRODUCT", label: "Finished Product" },
@@ -82,7 +82,7 @@ function syncUnitCostFromPaidAmount(
   const next = [...lineItems];
   next[index] = {
     ...next[index],
-    unitCost: (paidNum / qty).toFixed(2),
+    unitCost: formatUnitCost(unitCostForLineTotal(paidNum, qty)),
   };
   return next;
 }
@@ -98,9 +98,16 @@ export function PurchaseForm({
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
-  const [items, setItems] = useState<LineItem[]>(
-    initialData?.items?.length ? initialData.items : [emptyItem()]
-  );
+  const [items, setItems] = useState<LineItem[]>(() => {
+    const lines = initialData?.items?.length ? initialData.items : [emptyItem()];
+    if (initialData?.paidAmount) {
+      return syncUnitCostFromPaidAmount(
+        normalizePaidAmount(initialData.paidAmount),
+        lines
+      );
+    }
+    return lines;
+  });
   const [paidAmount, setPaidAmount] = useState(
     normalizePaidAmount(initialData?.paidAmount ?? 0)
   );
@@ -374,7 +381,7 @@ export function PurchaseForm({
                   />
                   <Input
                     type="number"
-                    step="0.01"
+                    step="any"
                     label="Unit Cost"
                     value={item.unitCost}
                     onChange={(e) => updateItem(index, "unitCost", e.target.value)}
