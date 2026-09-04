@@ -3,7 +3,8 @@
 import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/prisma";
 import { ExpenseCategory, PaymentEntityType } from "@/generated/prisma";
-import { toNumber, generateNumber } from "@/lib/utils";
+import { withSequentialNumber } from "@/lib/numbering";
+import { toNumber } from "@/lib/utils";
 
 export async function getPayments() {
   return prisma.payment.findMany({
@@ -20,14 +21,15 @@ export async function createPayment(data: {
   paymentDate: string;
   notes?: string;
 }) {
-  const count = await prisma.payment.count();
-  const payment = await prisma.payment.create({
-    data: {
-      paymentNumber: await generateNumber("PAY", count),
-      ...data,
-      paymentDate: new Date(data.paymentDate),
-    },
-  });
+  const payment = await withSequentialNumber("payment", (paymentNumber) =>
+    prisma.payment.create({
+      data: {
+        paymentNumber,
+        ...data,
+        paymentDate: new Date(data.paymentDate),
+      },
+    })
+  );
   revalidatePath("/payments");
   return payment;
 }

@@ -84,28 +84,6 @@ export function formatDateTime(date: Date | string): string {
   });
 }
 
-export async function generateNumber(
-  prefix: string,
-  count: number
-): Promise<string> {
-  const num = String(count + 1).padStart(4, "0");
-  return `${prefix}-${num}`;
-}
-
-/** Next value after `latest` (e.g. LOT-0004 → LOT-0005). Safe when rows were deleted. */
-export function nextSequentialNumber(
-  prefix: string,
-  latest: string | null | undefined
-): string {
-  if (!latest) {
-    return `${prefix}-0001`;
-  }
-  const escaped = prefix.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  const match = latest.match(new RegExp(`^${escaped}-(\\d+)$`, "i"));
-  const next = match ? parseInt(match[1], 10) + 1 : 1;
-  return `${prefix}-${String(next).padStart(4, "0")}`;
-}
-
 export function calcPaymentStatus(
   total: number,
   paid: number

@@ -17,8 +17,8 @@ import {
   updatePackagingMaterialStock,
   updateProductStock,
 } from "@/lib/inventory";
-import { getNextLotNumber } from "@/lib/numbering";
-import { toNumber, generateNumber, calcPaymentStatus, nextSequentialNumber } from "@/lib/utils";
+import { withSequentialNumber } from "@/lib/numbering";
+import { toNumber, calcPaymentStatus } from "@/lib/utils";
 
 export async function getPurchases() {
   return prisma.purchase.findMany({
@@ -62,9 +62,6 @@ export async function createPurchase(data: {
   notes?: string;
   items: PurchaseItemInput[];
 }) {
-  const count = await prisma.purchase.count();
-  const purchaseNumber = await generateNumber("PUR", count);
-
   const itemsWithTotals = data.items.map((item) => ({
     ...item,
     totalCost: item.quantity * item.unitCost,
@@ -72,27 +69,28 @@ export async function createPurchase(data: {
   const totalAmount = itemsWithTotals.reduce((s, i) => s + i.totalCost, 0);
   const paidAmount = data.paidAmount ?? 0;
 
-  const purchase = await prisma.purchase.create({
-    data: {
-      purchaseNumber,
-      supplierId: data.supplierId,
-      purchaseDate: new Date(data.purchaseDate),
-      invoiceRef: data.invoiceRef,
-      totalAmount,
-      paidAmount,
-      paymentStatus: calcPaymentStatus(totalAmount, paidAmount),
-      notes: data.notes,
-      items: { create: itemsWithTotals },
-    },
-    include: { items: true },
-  });
-
-  let nextLotNumber = await getNextLotNumber();
+  const purchase = await withSequentialNumber("purchase", (purchaseNumber) =>
+    prisma.purchase.create({
+      data: {
+        purchaseNumber,
+        supplierId: data.supplierId,
+        purchaseDate: new Date(data.purchaseDate),
+        invoiceRef: data.invoiceRef,
+        totalAmount,
+        paidAmount,
+        paymentStatus: calcPaymentStatus(totalAmount, paidAmount),
+        notes: data.notes,
+        items: { create: itemsWithTotals },
+      },
+      include: { items: true },
+    })
+  );
 
   for (const item of purchase.items) {
     if (item.itemType === PurchaseItemType.FINISHED_PRODUCT && item.productId) {
+      const productId = item.productId;
       const product = await prisma.product.findUniqueOrThrow({
-        where: { id: item.productId },
+        where: { id: productId },
       });
       const qty = toNumber(item.quantity);
       const unitCost = toNumber(item.unitCost);
@@ -104,27 +102,28 @@ export async function createPurchase(data: {
       );
 
       await prisma.product.update({
-        where: { id: item.productId },
+        where: { id: productId },
         data: {
           currentStock: toNumber(product.currentStock) + qty,
           averageCost: newAvg,
         },
       });
 
-      await prisma.productLot.create({
-        data: {
-          lotNumber: nextLotNumber,
-          productId: item.productId,
-          sourceType: ProductLotSourceType.PURCHASE,
-          purchaseItemId: item.id,
-          initialQuantity: qty,
-          remainingQuantity: qty,
-          unit: item.unit,
-          purchaseCost: unitCost,
-          unitCost,
-        },
-      });
-      nextLotNumber = nextSequentialNumber("LOT", nextLotNumber);
+      await withSequentialNumber("lot", (lotNumber) =>
+        prisma.productLot.create({
+          data: {
+            lotNumber,
+            productId,
+            sourceType: ProductLotSourceType.PURCHASE,
+            purchaseItemId: item.id,
+            initialQuantity: qty,
+            remainingQuantity: qty,
+            unit: item.unit,
+            purchaseCost: unitCost,
+            unitCost,
+          },
+        })
+      );
 
       await syncProductAverageCostFromLots(item.productId);
 
@@ -235,18 +234,19 @@ export async function recordPurchasePayment(
     },
   });
 
-  const payCount = await prisma.payment.count();
-  await prisma.payment.create({
-    data: {
-      paymentNumber: await generateNumber("PAY", payCount),
-      entityType: "SUPPLIER",
-      supplierId: purchase.supplierId,
-      amount,
-      referenceType: "Purchase",
-      referenceId: purchaseId,
-      notes,
-    },
-  });
+  await withSequentialNumber("payment", (paymentNumber) =>
+    prisma.payment.create({
+      data: {
+        paymentNumber,
+        entityType: "SUPPLIER",
+        supplierId: purchase.supplierId,
+        amount,
+        referenceType: "Purchase",
+        referenceId: purchaseId,
+        notes,
+      },
+    })
+  );
 
   revalidatePath("/purchases");
   revalidatePath("/payments");
@@ -358,12 +358,11 @@ export async function updatePurchase(
     include: { items: true },
   });
 
-  let nextLotNumber = await getNextLotNumber();
-
   for (const item of purchase.items) {
     if (item.itemType === PurchaseItemType.FINISHED_PRODUCT && item.productId) {
+      const productId = item.productId;
       const product = await prisma.product.findUniqueOrThrow({
-        where: { id: item.productId },
+        where: { id: productId },
       });
       const qty = toNumber(item.quantity);
       const unitCost = toNumber(item.unitCost);
@@ -374,23 +373,24 @@ export async function updatePurchase(
         unitCost
       );
       await prisma.product.update({
-        where: { id: item.productId },
+        where: { id: productId },
         data: { currentStock: toNumber(product.currentStock) + qty, averageCost: newAvg },
       });
-      await prisma.productLot.create({
-        data: {
-          lotNumber: nextLotNumber,
-          productId: item.productId,
-          sourceType: ProductLotSourceType.PURCHASE,
-          purchaseItemId: item.id,
-          initialQuantity: qty,
-          remainingQuantity: qty,
-          unit: item.unit,
-          purchaseCost: unitCost,
-          unitCost,
-        },
-      });
-      nextLotNumber = nextSequentialNumber("LOT", nextLotNumber);
+      await withSequentialNumber("lot", (lotNumber) =>
+        prisma.productLot.create({
+          data: {
+            lotNumber,
+            productId,
+            sourceType: ProductLotSourceType.PURCHASE,
+            purchaseItemId: item.id,
+            initialQuantity: qty,
+            remainingQuantity: qty,
+            unit: item.unit,
+            purchaseCost: unitCost,
+            unitCost,
+          },
+        })
+      );
       await syncProductAverageCostFromLots(item.productId);
       await recordInventoryMovement({
         itemType: InventoryItemType.FINISHED_PRODUCT,

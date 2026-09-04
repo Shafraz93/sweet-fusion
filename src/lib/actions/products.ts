@@ -12,7 +12,7 @@ import {
   recordInventoryMovement,
   updateAverageCost,
 } from "@/lib/inventory";
-import { toNumber, generateNumber, calcPaymentStatus, lineRevenueAfterDiscount } from "@/lib/utils";
+import { toNumber, lineRevenueAfterDiscount } from "@/lib/utils";
 
 export async function getProducts(search?: string) {
   return prisma.product.findMany({

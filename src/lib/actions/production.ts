@@ -13,8 +13,8 @@ import {
   updateAverageCost,
   syncProductAverageCostFromLots,
 } from "@/lib/inventory";
-import { getNextLotNumber } from "@/lib/numbering";
-import { toNumber, generateNumber } from "@/lib/utils";
+import { withSequentialNumber } from "@/lib/numbering";
+import { toNumber } from "@/lib/utils";
 
 export async function getProductionBatches() {
   return prisma.productionBatch.findMany({
@@ -57,9 +57,6 @@ export async function createProductionBatch(data: {
   notes?: string;
   ingredients: IngredientUsage[];
 }) {
-  const count = await prisma.productionBatch.count();
-  const batchNumber = await generateNumber("BATCH", count);
-
   let ingredientCost = 0;
   const ingredientRecords: Array<{
     rawMaterialId: string;
@@ -89,24 +86,26 @@ export async function createProductionBatch(data: {
   const costPerUnit =
     data.outputQuantity > 0 ? totalCost / data.outputQuantity : 0;
 
-  const batch = await prisma.productionBatch.create({
-    data: {
-      batchNumber,
-      productId: data.productId,
-      recipeId: data.recipeId,
-      productionDate: new Date(data.productionDate),
-      outputQuantity: data.outputQuantity,
-      outputUnit: data.outputUnit,
-      labourCost: data.labourCost,
-      otherCost: data.otherCost,
-      ingredientCost,
-      totalCost,
-      costPerUnit,
-      notes: data.notes,
-      ingredients: { create: ingredientRecords },
-    },
-    include: { product: true, ingredients: true },
-  });
+  const batch = await withSequentialNumber("batch", (batchNumber) =>
+    prisma.productionBatch.create({
+      data: {
+        batchNumber,
+        productId: data.productId,
+        recipeId: data.recipeId,
+        productionDate: new Date(data.productionDate),
+        outputQuantity: data.outputQuantity,
+        outputUnit: data.outputUnit,
+        labourCost: data.labourCost,
+        otherCost: data.otherCost,
+        ingredientCost,
+        totalCost,
+        costPerUnit,
+        notes: data.notes,
+        ingredients: { create: ingredientRecords },
+      },
+      include: { product: true, ingredients: true },
+    })
+  );
 
   for (const ing of ingredientRecords) {
     const material = await prisma.rawMaterial.findUniqueOrThrow({
@@ -150,19 +149,21 @@ export async function createProductionBatch(data: {
     },
   });
 
-  await prisma.productLot.create({
-    data: {
-      lotNumber: await getNextLotNumber(),
-      productId: data.productId,
-      sourceType: ProductLotSourceType.PRODUCTION,
-      productionBatchId: batch.id,
-      initialQuantity: data.outputQuantity,
-      remainingQuantity: data.outputQuantity,
-      unit: data.outputUnit,
-      productionCost: costPerUnit,
-      unitCost: costPerUnit,
-    },
-  });
+  await withSequentialNumber("lot", (lotNumber) =>
+    prisma.productLot.create({
+      data: {
+        lotNumber,
+        productId: data.productId,
+        sourceType: ProductLotSourceType.PRODUCTION,
+        productionBatchId: batch.id,
+        initialQuantity: data.outputQuantity,
+        remainingQuantity: data.outputQuantity,
+        unit: data.outputUnit,
+        productionCost: costPerUnit,
+        unitCost: costPerUnit,
+      },
+    })
+  );
 
   await syncProductAverageCostFromLots(data.productId);
 
@@ -198,9 +199,6 @@ export async function createPackagingOperation(data: {
     unit: UnitOfMeasure;
   }[];
 }) {
-  const count = await prisma.packagingOperation.count();
-  const operationNumber = await generateNumber("PKG", count);
-
   let totalPackagingCost = 0;
   const materialRecords: Array<{
     packagingMaterialId: string;
@@ -235,22 +233,24 @@ export async function createPackagingOperation(data: {
   const costPerUnit = sourceUnitCost + packagingCostPerUnit;
   const totalCost = costPerUnit * data.quantity;
 
-  const operation = await prisma.packagingOperation.create({
-    data: {
-      operationNumber,
-      productId: data.productId,
-      sourceLotId: data.sourceLotId,
-      quantity: data.quantity,
-      unit: data.unit,
-      sourceUnitCost,
-      totalPackagingCost,
-      totalCost,
-      costPerUnit,
-      operationDate: new Date(data.operationDate),
-      notes: data.notes,
-      materials: { create: materialRecords },
-    },
-  });
+  const operation = await withSequentialNumber("packaging", (operationNumber) =>
+    prisma.packagingOperation.create({
+      data: {
+        operationNumber,
+        productId: data.productId,
+        sourceLotId: data.sourceLotId,
+        quantity: data.quantity,
+        unit: data.unit,
+        sourceUnitCost,
+        totalPackagingCost,
+        totalCost,
+        costPerUnit,
+        operationDate: new Date(data.operationDate),
+        notes: data.notes,
+        materials: { create: materialRecords },
+      },
+    })
+  );
 
   for (const mat of materialRecords) {
     const material = await prisma.packagingMaterial.findUniqueOrThrow({
@@ -276,20 +276,22 @@ export async function createPackagingOperation(data: {
     });
   }
 
-  await prisma.productLot.create({
-    data: {
-      lotNumber: await getNextLotNumber(),
-      productId: data.productId,
-      sourceType: ProductLotSourceType.PACKAGING,
-      packagingOperationId: operation.id,
-      initialQuantity: data.quantity,
-      remainingQuantity: data.quantity,
-      unit: data.unit,
-      purchaseCost: sourceUnitCost,
-      packagingCost: packagingCostPerUnit,
-      unitCost: costPerUnit,
-    },
-  });
+  await withSequentialNumber("lot", (lotNumber) =>
+    prisma.productLot.create({
+      data: {
+        lotNumber,
+        productId: data.productId,
+        sourceType: ProductLotSourceType.PACKAGING,
+        packagingOperationId: operation.id,
+        initialQuantity: data.quantity,
+        remainingQuantity: data.quantity,
+        unit: data.unit,
+        purchaseCost: sourceUnitCost,
+        packagingCost: packagingCostPerUnit,
+        unitCost: costPerUnit,
+      },
+    })
+  );
 
   await recordInventoryMovement({
     itemType: InventoryItemType.FINISHED_PRODUCT,

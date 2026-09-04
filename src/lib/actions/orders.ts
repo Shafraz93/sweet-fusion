@@ -13,7 +13,8 @@ import {
   updatePackagingMaterialStock,
   getProductInventoryUnitCosts,
 } from "@/lib/inventory";
-import { toNumber, generateNumber, calcPaymentStatus, normalizeDiscount } from "@/lib/utils";
+import { withSequentialNumber } from "@/lib/numbering";
+import { toNumber, calcPaymentStatus, normalizeDiscount } from "@/lib/utils";
 
 export async function getSalesOrders() {
   return prisma.salesOrder.findMany({
@@ -204,9 +205,6 @@ export async function createSalesOrder(data: {
   notes?: string;
   items: OrderItemInput[];
 }) {
-  const count = await prisma.salesOrder.count();
-  const orderNumber = await generateNumber("ORD", count);
-
   const itemsWithCosts = await resolveAllOrderItemCosts(data.items);
 
   const subtotal = itemsWithCosts.reduce((s, i) => s + i.totalPrice, 0);
@@ -214,41 +212,43 @@ export async function createSalesOrder(data: {
   const totalAmount = subtotal - discount;
   const paidAmount = data.paidAmount ?? 0;
 
-  const order = await prisma.salesOrder.create({
-    data: {
-      orderNumber,
-      customerId: data.customerId,
-      orderDate: new Date(data.orderDate),
-      subtotal,
-      discount,
-      totalAmount,
-      paidAmount,
-      paymentStatus: calcPaymentStatus(totalAmount, paidAmount),
-      notes: data.notes,
-      items: {
-        create: itemsWithCosts.map((item) => ({
-          productId: item.productId,
-          quantity: item.quantity,
-          unit: item.unit,
-          unitPrice: item.unitPrice,
-          unitCost: item.unitCost,
-          packagingCost: item.packagingCost,
-          totalPrice: item.totalPrice,
-          totalCost: item.totalCost,
-          packaging: {
-            create: item.packagingRecords.map((pkg) => ({
-              packagingMaterialId: pkg.packagingMaterialId,
-              quantityUsed: pkg.quantityUsed,
-              unit: pkg.unit,
-              unitCost: pkg.unitCost,
-              totalCost: pkg.totalCost,
-            })),
-          },
-        })),
+  const order = await withSequentialNumber("order", (orderNumber) =>
+    prisma.salesOrder.create({
+      data: {
+        orderNumber,
+        customerId: data.customerId,
+        orderDate: new Date(data.orderDate),
+        subtotal,
+        discount,
+        totalAmount,
+        paidAmount,
+        paymentStatus: calcPaymentStatus(totalAmount, paidAmount),
+        notes: data.notes,
+        items: {
+          create: itemsWithCosts.map((item) => ({
+            productId: item.productId,
+            quantity: item.quantity,
+            unit: item.unit,
+            unitPrice: item.unitPrice,
+            unitCost: item.unitCost,
+            packagingCost: item.packagingCost,
+            totalPrice: item.totalPrice,
+            totalCost: item.totalCost,
+            packaging: {
+              create: item.packagingRecords.map((pkg) => ({
+                packagingMaterialId: pkg.packagingMaterialId,
+                quantityUsed: pkg.quantityUsed,
+                unit: pkg.unit,
+                unitCost: pkg.unitCost,
+                totalCost: pkg.totalCost,
+              })),
+            },
+          })),
+        },
       },
-    },
-    include: { items: true },
-  });
+      include: { items: true },
+    })
+  );
 
   for (const item of itemsWithCosts) {
     const product = await prisma.product.findUniqueOrThrow({
@@ -299,18 +299,19 @@ export async function recordOrderPayment(
     },
   });
 
-  const payCount = await prisma.payment.count();
-  await prisma.payment.create({
-    data: {
-      paymentNumber: await generateNumber("PAY", payCount),
-      entityType: "CUSTOMER",
-      customerId: order.customerId,
-      amount,
-      referenceType: "SalesOrder",
-      referenceId: orderId,
-      notes,
-    },
-  });
+  await withSequentialNumber("payment", (paymentNumber) =>
+    prisma.payment.create({
+      data: {
+        paymentNumber,
+        entityType: "CUSTOMER",
+        customerId: order.customerId,
+        amount,
+        referenceType: "SalesOrder",
+        referenceId: orderId,
+        notes,
+      },
+    })
+  );
 
   revalidatePath("/orders");
   revalidatePath("/payments");

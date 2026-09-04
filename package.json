@@ -25,7 +25,11 @@
     "db:dev": "prisma dev -d",
     "db:dev:stop": "prisma dev stop default",
     "db:dev:start": "prisma dev start default",
-    "db:dev:restart": "prisma dev stop default && prisma dev -d"
+    "db:dev:restart": "prisma dev stop default && prisma dev -d",
+    "mobile": "npm start --prefix mobile",
+    "mobile:install": "npm install --prefix mobile",
+    "smoke:api": "tsx -r dotenv/config scripts/smoke-test-api.ts",
+    "verify:numbering": "tsx -r dotenv/config scripts/verify-numbering.ts"
   },
   "prisma": {
     "seed": "tsx prisma/seed.ts"
